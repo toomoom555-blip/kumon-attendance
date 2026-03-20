@@ -1,0 +1,3114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>公文式 勤怠管理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        :root {
+            --bg: #FFFFFF;
+            --surface: #FFFFFF;
+            --surface2: #F8F9FA;
+            --border: #E8EAED;
+            --border2: #D1D5DB;
+            --ink: #1A1916;
+            --ink2: #5A574F;
+            --ink3: #9C9890;
+            --green: #2D7A4F;
+            --green-bg: #EBF5EF;
+            --green-border: #B8DFC7;
+            --red: #C0392B;
+            --red-bg: #FDECEA;
+            --red-border: #F5C3BE;
+            --amber: #B7790F;
+            --amber-bg: #FEF6E4;
+            --blue: #2C5F8A;
+            --blue-bg: #EBF2FA;
+            --accent: #3D6B4F;
+            --mono: 'DM Mono', monospace;
+            --font: 'Zen Kaku Gothic New', sans-serif;
+            --radius: 16px;
+            --shadow: 0 2px 12px rgba(26,25,22,0.08), 0 1px 3px rgba(26,25,22,0.05);
+            --shadow-lg: 0 8px 32px rgba(26,25,22,0.12), 0 2px 8px rgba(26,25,22,0.06);
+        }
+
+        html, body {
+            width: 100%;
+            height: 100dvh;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: var(--font);
+            -webkit-overflow-scrolling: touch;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .header-left-icon {
+            font-size: 24px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .location-badge {
+            background: var(--blue-bg);
+            color: var(--blue);
+            border: 1px solid var(--border);
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--ink2);
+        }
+
+        .sync-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--ink3);
+        }
+
+        .sync-dot.online {
+            background: var(--green);
+        }
+
+        .sync-dot.syncing {
+            background: var(--amber);
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-clock {
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--ink2);
+        }
+
+        /* Main Container */
+        .container {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 80px;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 16px;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 0;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 0;
+            height: 80px;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            cursor: pointer;
+            color: var(--ink3);
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border: none;
+            background: none;
+        }
+
+        .nav-item-icon {
+            font-size: 24px;
+        }
+
+        .nav-item.active {
+            color: var(--green);
+        }
+
+        .nav-item.active .nav-item-icon {
+            transform: scale(1.1);
+        }
+
+        /* TAB 1: 打刻 (Scan) */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--ink2);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--green);
+            font-family: var(--mono);
+        }
+
+        .employee-selector {
+            margin-bottom: 20px;
+        }
+
+        .employee-selector-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 12px;
+        }
+
+        .employee-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .employee-item {
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .employee-item:active {
+            transform: scale(0.95);
+        }
+
+        .employee-item.selected {
+            border-color: var(--green);
+            background: var(--green-bg);
+        }
+
+        .emp-avatar {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 8px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .emp-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .emp-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 4px;
+        }
+
+        .emp-status {
+            font-size: 10px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            background: var(--ink3);
+            color: white;
+        }
+
+        .emp-status.in {
+            background: var(--green);
+        }
+
+        .emp-status.out {
+            background: var(--red);
+        }
+
+        .selected-info {
+            background: var(--blue-bg);
+            border: 1px solid var(--blue);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .selected-info.active {
+            display: block;
+        }
+
+        .selected-info-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .selected-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+
+        .selected-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .selected-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .selected-dept {
+            font-size: 12px;
+            color: var(--ink2);
+        }
+
+        .selected-times {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--ink2);
+        }
+
+        .selected-times-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .times-label {
+            font-weight: 600;
+        }
+
+        .times-value {
+            font-family: var(--mono);
+            font-size: 13px;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 12px 16px;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 14px;
+            font-weight: 700;
+            font-family: var(--font);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn-primary {
+            background: var(--green);
+            color: white;
+        }
+
+        .btn-primary:disabled {
+            background: var(--ink3);
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--surface2);
+            color: var(--ink);
+            border: 1px solid var(--border);
+        }
+
+        .btn-danger {
+            background: var(--red);
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--amber);
+            color: white;
+        }
+
+        .btn-small {
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
+        .activity-feed {
+            margin-top: 20px;
+        }
+
+        .activity-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 12px;
+        }
+
+        .feed-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .feed-item {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .feed-emoji {
+            font-size: 32px;
+            flex-shrink: 0;
+        }
+
+        .feed-content {
+            flex: 1;
+        }
+
+        .feed-text {
+            font-size: 13px;
+            color: var(--ink);
+            font-weight: 500;
+        }
+
+        .feed-time {
+            font-size: 11px;
+            color: var(--ink2);
+            font-family: var(--mono);
+            margin-top: 2px;
+        }
+
+        .feed-empty {
+            text-align: center;
+            padding: 24px;
+            color: var(--ink2);
+            font-size: 13px;
+        }
+
+        /* TAB 2: ダッシュ (Dashboard) */
+        .dash-section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .currently-working-item {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .currently-working-emoji {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        .currently-working-emoji img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .currently-working-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .currently-working-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        .currently-working-dept {
+            font-size: 11px;
+            color: var(--ink2);
+        }
+
+        .currently-working-time {
+            font-size: 11px;
+            color: var(--green);
+            font-weight: 600;
+            font-family: var(--mono);
+        }
+
+        .monthly-grid-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+
+        .monthly-grid {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            min-width: 800px;
+        }
+
+        .monthly-grid thead {
+            background: var(--surface2);
+            border-bottom: 2px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .monthly-grid th {
+            padding: 8px;
+            text-align: center;
+            font-weight: 700;
+            color: var(--ink);
+            border-right: 1px solid var(--border);
+        }
+
+        .monthly-grid th:first-child {
+            position: sticky;
+            left: 0;
+            background: var(--surface2);
+            z-index: 2;
+            text-align: left;
+            min-width: 120px;
+        }
+
+        .monthly-grid td {
+            padding: 8px;
+            text-align: center;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            font-family: var(--mono);
+        }
+
+        .monthly-grid td:first-child {
+            position: sticky;
+            left: 0;
+            background: var(--surface);
+            z-index: 1;
+            text-align: left;
+            font-weight: 600;
+            font-family: var(--font);
+        }
+
+        .grid-cell-worked {
+            background: var(--green-bg);
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .grid-cell-empty {
+            background: var(--surface2);
+            color: var(--ink3);
+        }
+
+        .grid-cell-total {
+            background: var(--blue-bg);
+            color: var(--blue);
+            font-weight: 700;
+        }
+
+        /* TAB 3: 従業員 (Employees) */
+        .emp-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .emp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
+        }
+
+        .emp-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .emp-card:active {
+            transform: scale(0.95);
+            box-shadow: var(--shadow);
+        }
+
+        .emp-card-emoji {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 8px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+        }
+
+        .emp-card-emoji img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .emp-card-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 4px;
+        }
+
+        .emp-card-dept {
+            font-size: 11px;
+            color: var(--ink2);
+            margin-bottom: 12px;
+        }
+
+        .emp-mgmt-toolbar {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .no-sel-msg {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--ink2);
+        }
+
+        .no-sel-msg-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .no-sel-msg-text {
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        /* TAB 4: 記録 (Records) */
+        .records-filter {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .filter-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--ink2);
+            text-transform: uppercase;
+        }
+
+        select, input[type="text"], input[type="date"] {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: var(--font);
+            font-size: 13px;
+            color: var(--ink);
+            background: var(--surface);
+        }
+
+        .records-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+            font-size: 12px;
+        }
+
+        .records-table thead {
+            background: var(--surface2);
+            border-bottom: 2px solid var(--border);
+        }
+
+        .records-table th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .records-table td {
+            padding: 12px 8px;
+            border-bottom: 1px solid var(--border);
+            color: var(--ink2);
+            font-family: var(--mono);
+        }
+
+        .records-table tr:hover {
+            background: var(--surface2);
+        }
+
+        /* TAB 5: 設定 (Settings) */
+        .settings-section {
+            margin-bottom: 24px;
+        }
+
+        .settings-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .settings-item {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .settings-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .settings-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        .settings-value {
+            font-size: 11px;
+            color: var(--ink2);
+            font-family: var(--mono);
+        }
+
+        .settings-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: var(--font);
+            font-size: 13px;
+            color: var(--ink);
+            background: var(--surface);
+            margin-bottom: 8px;
+        }
+
+        .location-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .location-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .location-item.current {
+            background: var(--green-bg);
+            border-color: var(--green-border);
+        }
+
+        /* Modals */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(26, 25, 22, 0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 16px;
+        }
+
+        .modal-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ink);
+            text-transform: uppercase;
+        }
+
+        .form-input {
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: var(--font);
+            font-size: 13px;
+            color: var(--ink);
+            background: var(--surface);
+        }
+
+        .form-emoji-picker {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 8px;
+        }
+
+        .avatar-style-picker {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .avatar-style-option {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            padding: 12px;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: var(--surface);
+        }
+
+        .avatar-style-option:active {
+            transform: scale(0.95);
+        }
+
+        .avatar-style-option img {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: var(--surface2);
+        }
+
+        .avatar-style-option-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-align: center;
+            color: var(--ink2);
+        }
+
+        .avatar-style-option.selected {
+            border-color: var(--green);
+            background: var(--green-bg);
+        }
+
+        .avatar-style-option.selected .avatar-style-option-label {
+            color: var(--green);
+            font-weight: 700;
+        }
+
+        .avatar-preview {
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            background: var(--surface2);
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .avatar-preview img {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid var(--green);
+        }
+
+        .emoji-option {
+            font-size: 32px;
+            cursor: pointer;
+            padding: 8px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            text-align: center;
+            transition: all 0.2s ease;
+        }
+
+        .emoji-option.selected {
+            border-color: var(--green);
+            background: var(--green-bg);
+            transform: scale(1.1);
+        }
+
+        .modal-footer {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .modal-footer.single {
+            grid-template-columns: 1fr;
+        }
+
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            box-shadow: var(--shadow-lg);
+            animation: slideIn 0.3s ease-out;
+            pointer-events: auto;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            max-width: 400px;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .toast-message {
+            font-size: 13px;
+            color: var(--ink);
+        }
+
+        .toast.success .toast-icon { color: var(--green); }
+        .toast.success { border-color: var(--green-border); background: var(--green-bg); }
+
+        .toast.error .toast-icon { color: var(--red); }
+        .toast.error { border-color: var(--red-border); background: var(--red-bg); }
+
+        .toast.warning .toast-icon { color: var(--amber); }
+        .toast.warning { border-color: var(--amber); background: var(--amber-bg); }
+
+        .toast.info .toast-icon { color: var(--blue); }
+        .toast.info { border-color: var(--blue); background: var(--blue-bg); }
+
+        /* Setup Wizard */
+        .wizard {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg);
+            z-index: 1001;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .wizard.active {
+            display: flex;
+        }
+
+        .wizard-step {
+            display: none;
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .wizard-step.active {
+            display: block;
+        }
+
+        .wizard-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 12px;
+        }
+
+        .wizard-desc {
+            font-size: 14px;
+            color: var(--ink2);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        .wizard-progress {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .progress-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--border);
+            transition: all 0.3s ease;
+        }
+
+        .progress-dot.active {
+            background: var(--green);
+            transform: scale(1.2);
+        }
+
+        .wizard-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: var(--font);
+            font-size: 13px;
+            color: var(--ink);
+            background: var(--surface);
+            margin-bottom: 12px;
+        }
+
+        .wizard-code {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--ink);
+            margin-bottom: 12px;
+            word-break: break-all;
+        }
+
+        .wizard-footer {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 24px;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .wizard-footer.single {
+            grid-template-columns: 1fr;
+        }
+
+        /* Excel File Option */
+        .excel-file-option {
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .excel-file-option:hover {
+            border-color: var(--border2);
+            background: #F0F1F3;
+        }
+
+        .excel-file-option.selected {
+            border-color: var(--green);
+            background: var(--green-bg);
+        }
+
+        .excel-file-option.selected::after {
+            content: '✓';
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 26px;
+            height: 26px;
+            background: var(--green);
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        /* Utility */
+        .hidden {
+            display: none !important;
+        }
+
+        .info-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px;
+            background: var(--surface2);
+            border-radius: 8px;
+        }
+
+        .info-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ink2);
+        }
+
+        .info-value {
+            font-size: 12px;
+            color: var(--ink);
+            font-family: var(--mono);
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="header-left">
+            <span class="header-left-icon">📋</span>
+            <span>公文式 勤怠管理</span>
+        </div>
+        <div class="header-right">
+            <div class="location-badge" id="locationBadge">選択なし</div>
+            <div class="sync-status">
+                <div class="sync-dot" id="syncDot"></div>
+                <span id="syncText">オフライン</span>
+            </div>
+            <div class="header-clock" id="headerClock">00:00</div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <div class="content-area">
+            <!-- TAB 1: 打刻 -->
+            <div class="tab-content active" id="tab-scan">
+                <div class="stat-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">出勤中</div>
+                        <div class="stat-value" id="statCheckIn">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">本日打刻</div>
+                        <div class="stat-value" id="statStamps">0</div>
+                    </div>
+                </div>
+
+                <div class="employee-selector">
+                    <div class="employee-selector-title">従業員を選択</div>
+                    <div class="employee-grid" id="scanEmployeeGrid"></div>
+                </div>
+
+                <div class="selected-info" id="selectedInfo">
+                    <div class="selected-info-header">
+                        <div class="selected-avatar" id="selectedAvatar">👤</div>
+                        <div>
+                            <div class="selected-name" id="selectedName">名前</div>
+                            <div class="selected-dept" id="selectedDept">部署</div>
+                        </div>
+                    </div>
+                    <div class="selected-times">
+                        <div class="selected-times-row">
+                            <span class="times-label">本日出勤:</span>
+                            <span class="times-value" id="todayCheckIn">--:--</span>
+                        </div>
+                        <div class="selected-times-row">
+                            <span class="times-label">本日退勤:</span>
+                            <span class="times-value" id="todayCheckOut">--:--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn btn-primary" id="btnCheckIn">出勤</button>
+                    <button class="btn btn-warning" id="btnCheckOut">退勤</button>
+                </div>
+
+                <div class="activity-feed">
+                    <div class="activity-title">本日の打刻</div>
+                    <div class="feed-list" id="activityFeed"></div>
+                </div>
+            </div>
+
+            <!-- TAB 2: ダッシュ -->
+            <div class="tab-content" id="tab-dash">
+                <div class="dash-section">
+                    <div class="section-title">現在出勤中</div>
+                    <div id="currentlyWorking"></div>
+                </div>
+                <div class="dash-section">
+                    <div class="section-title">月次勤怠一覧</div>
+                    <div id="monthlyGrid" class="monthly-grid-wrapper"></div>
+                </div>
+            </div>
+
+            <!-- TAB 3: 従業員 -->
+            <div class="tab-content" id="tab-emp">
+                <div class="emp-header">
+                    <div style="font-size: 16px; font-weight: 700;">従業員管理</div>
+                    <button class="btn btn-primary btn-small" id="btnAddEmp">＋ 追加</button>
+                </div>
+                <div class="emp-grid" id="empGrid"></div>
+                <div class="no-sel-msg" id="noEmpMsg" style="display: none;">
+                    <div class="no-sel-msg-icon">👥</div>
+                    <div class="no-sel-msg-text">従業員を追加してください</div>
+                </div>
+            </div>
+
+            <!-- TAB 4: 記録 -->
+            <div class="tab-content" id="tab-records">
+                <div class="records-filter">
+                    <div class="filter-group">
+                        <label class="filter-label">従業員</label>
+                        <select id="recordsFilterEmp">
+                            <option value="">すべて</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">拠点</label>
+                        <select id="recordsFilterLoc">
+                            <option value="">すべて</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-secondary btn-small" id="btnExportCSV">CSV エクスポート</button>
+                <table class="records-table">
+                    <thead>
+                        <tr>
+                            <th>日付</th>
+                            <th>氏名</th>
+                            <th>部署</th>
+                            <th>拠点</th>
+                            <th>出勤打刻</th>
+                            <th>退勤打刻</th>
+                            <th>給与用出勤</th>
+                            <th>給与用退勤</th>
+                            <th>勤務時間</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordsTableBody"></tbody>
+                </table>
+            </div>
+
+            <!-- TAB 5: 設定 -->
+            <div class="tab-content" id="tab-settings">
+                <div class="settings-section">
+                    <div class="settings-title">OneDrive 連携</div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label" id="authStatus">未認証</div>
+                            <div class="settings-value">Microsoft アカウント</div>
+                        </div>
+                        <button class="btn btn-primary btn-small" id="btnAuth">ログイン</button>
+                    </div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label">Excel ファイル</div>
+                            <div class="settings-value" id="excelFileInfo">なし</div>
+                        </div>
+                        <button class="btn btn-secondary btn-small" id="btnSelectExcel">変更</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-title">拠点管理</div>
+                    <div class="location-list" id="locationList"></div>
+                    <div style="display: flex; gap: 12px; margin-top: 12px;">
+                        <input type="text" class="settings-input" placeholder="新しい拠点名" id="locInput" style="margin-bottom: 0; flex: 1;">
+                        <button class="btn btn-primary btn-small" id="btnAddLoc">追加</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-title">データ同期</div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label">最終同期</div>
+                            <div class="settings-value" id="lastSyncTime">未実施</div>
+                        </div>
+                        <button class="btn btn-primary btn-small" id="btnManualSync">同期</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-title">その他</div>
+                    <button class="btn btn-danger" style="width: 100%;" id="btnReset">すべてのデータをリセット</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+        <button class="nav-item active" data-tab="scan">
+            <div class="nav-item-icon">📋</div>
+            <div>打刻</div>
+        </button>
+        <button class="nav-item" data-tab="dash">
+            <div class="nav-item-icon">📊</div>
+            <div>ダッシュ</div>
+        </button>
+        <button class="nav-item" data-tab="emp">
+            <div class="nav-item-icon">👥</div>
+            <div>従業員</div>
+        </button>
+        <button class="nav-item" data-tab="records">
+            <div class="nav-item-icon">📝</div>
+            <div>記録</div>
+        </button>
+        <button class="nav-item" data-tab="settings">
+            <div class="nav-item-icon">⚙️</div>
+            <div>設定</div>
+        </button>
+    </nav>
+
+    <!-- Modals -->
+    <div class="modal" id="empModal">
+        <div class="modal-content">
+            <div class="modal-title" id="empModalTitle">従業員を追加</div>
+            <form class="modal-form" id="empForm">
+                <div class="form-group">
+                    <label class="form-label">名前</label>
+                    <input type="text" class="form-input" id="empName" placeholder="例: 田中太郎" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">部署</label>
+                    <input type="text" class="form-input" id="empDept" placeholder="例: 営業部" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">アバタースタイル</label>
+                    <div class="avatar-style-picker" id="avatarStylePicker"></div>
+                    <div class="avatar-preview" id="avatarPreview">
+                        <img src="https://api.dicebear.com/9.x/adventurer/svg?seed=user" alt="avatar preview" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22%3E%3Crect fill=%22%23f0f0f0%22 width=%2280%22 height=%2280%22/%3E%3Ctext x=%2240%22 y=%2245%22 text-anchor=%22middle%22 font-size=%2224%22%3E👤%3C/text%3E%3C/svg%3E'">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="empModalCancel">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="confirmModal">
+        <div class="modal-content" style="text-align: center;">
+            <div class="modal-title" id="confirmTitle">確認</div>
+            <div style="color: var(--ink2); margin-bottom: 20px;" id="confirmMessage"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="confirmCancel">キャンセル</button>
+                <button class="btn btn-primary" id="confirmOk">確認</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="excelModal">
+        <div class="modal-content">
+            <div class="modal-title">Excel ファイルを選択</div>
+            <div id="excelFileListSettings" style="margin-bottom: 16px;"></div>
+            <div style="margin-bottom: 16px; padding: 12px; background: var(--amber-bg); border-radius: 8px; font-size: 13px; color: var(--amber);">
+                ファイルが表示されない場合は、<a href="https://onedrive.live.com" target="_blank" style="color: var(--blue); font-weight: 600;">OneDrive</a> で
+                「新規 → Excel ブック」から作成してから、<button id="excelRefreshBtn" style="background:none;border:none;color:var(--blue);font-weight:600;cursor:pointer;font-size:13px;text-decoration:underline;">再読み込み</button>してください。
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="excelModalCancel">キャンセル</button>
+                <button class="btn btn-primary" id="excelModalSave">設定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="setupWizard">
+        <div class="wizard" id="wizard">
+            <div class="wizard-step active" id="wizardStep1">
+                <div class="wizard-title">セットアップ</div>
+                <div class="wizard-progress">
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot"></div>
+                    <div class="progress-dot"></div>
+                    <div class="progress-dot"></div>
+                </div>
+                <div class="wizard-desc">
+                    Azure AD アプリケーションを設定してください。<br>
+                    <a href="https://portal.azure.com" target="_blank" style="color: var(--blue);">Azure Portal</a> で以下の設定を行ってください:
+                    <br><br>
+                    1. アプリケーション登録を作成<br>
+                    2. リダイレクト URI を設定:<br>
+                </div>
+                <div class="wizard-code" id="redirectUri">http://localhost:8080</div>
+                <div class="wizard-desc">3. アプリケーション ID をコピー</div>
+                <input type="text" class="wizard-input" id="clientId" placeholder="クライアント ID を貼り付け">
+                <div class="wizard-footer single">
+                    <button class="btn btn-primary" id="wizardStep1Next">次へ</button>
+                </div>
+                <div style="margin-top: 16px; text-align: center; border-top: 1px solid var(--border); padding-top: 16px;">
+                    <button class="btn btn-secondary" id="wizardSkipBtn" style="font-size: 14px; color: var(--ink2);">OneDrive なしで試す（オフラインモード）</button>
+                </div>
+            </div>
+
+            <div class="wizard-step" id="wizardStep2">
+                <div class="wizard-title">Microsoft ログイン</div>
+                <div class="wizard-progress">
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot"></div>
+                    <div class="progress-dot"></div>
+                </div>
+                <div class="wizard-desc">Microsoft アカウントでログインしてください</div>
+                <div class="wizard-footer single">
+                    <button class="btn btn-primary" id="wizardStep2Login">ログイン</button>
+                </div>
+            </div>
+
+            <div class="wizard-step" id="wizardStep3">
+                <div class="wizard-title">Excel ファイル</div>
+                <div class="wizard-progress">
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot"></div>
+                </div>
+                <div class="wizard-desc">OneDrive の Excel ファイルを選択または作成してください</div>
+                <div id="excelFileList"></div>
+                <input type="text" class="wizard-input" id="newExcelName" placeholder="新しいファイル名 (例: 勤怠管理.xlsx)">
+                <div class="wizard-footer">
+                    <button class="btn btn-secondary" id="wizardStep3Back">戻る</button>
+                    <button class="btn btn-primary" id="wizardStep3Next">次へ</button>
+                </div>
+            </div>
+
+            <div class="wizard-step" id="wizardStep4">
+                <div class="wizard-title">拠点設定</div>
+                <div class="wizard-progress">
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                </div>
+                <div class="wizard-desc">このデバイスの拠点名を設定してください</div>
+                <input type="text" class="wizard-input" id="locName" placeholder="例: 本社, 支店A">
+                <div class="wizard-footer">
+                    <button class="btn btn-secondary" id="wizardStep4Back">戻る</button>
+                    <button class="btn btn-primary" id="wizardStep4Finish">完了</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script>
+        // ========== CONFIG & STATE ==========
+        const CONFIG = {
+            msalInstance: null,
+            clientId: localStorage.getItem('kumon_clientId') || null,
+            authority: 'https://login.microsoftonline.com/common',
+            redirectUri: window.location.origin && window.location.origin !== 'null' ? window.location.origin : 'http://localhost:8080',
+            scopes: ['Files.ReadWrite']
+        };
+
+        let appState = {
+            locations: JSON.parse(localStorage.getItem('kumon_locations')) || [],
+            employees: JSON.parse(localStorage.getItem('kumon_employees')) || [],
+            records: JSON.parse(localStorage.getItem('kumon_records')) || [],
+            currentLocationId: localStorage.getItem('kumon_currentLocationId') || null,
+            lastSyncTime: localStorage.getItem('kumon_lastSyncTime') || null,
+            excelFileId: localStorage.getItem('kumon_excelFileId') || null,
+            excelFileName: localStorage.getItem('kumon_excelFileName') || null,
+            selectedEmployeeId: null
+        };
+
+        // ========== INITIALIZATION ==========
+        window.addEventListener('DOMContentLoaded', () => {
+            initHeader();
+            initNav();
+            initEventListeners();
+            updateOnlineStatus();
+            startClock();
+
+            if (!CONFIG.clientId) {
+                showSetupWizard();
+            } else {
+                initMSAL();
+                loadAndRender();
+            }
+        });
+
+        // ========== HEADER & CLOCK ==========
+        function initHeader() {
+            updateLocationBadge();
+            setInterval(updateLocationBadge, 30000);
+        }
+
+        function updateLocationBadge() {
+            const badge = document.getElementById('locationBadge');
+            if (appState.currentLocationId) {
+                const loc = appState.locations.find(l => l.id === appState.currentLocationId);
+                badge.textContent = loc?.name || '選択なし';
+            } else {
+                badge.textContent = '選択なし';
+            }
+        }
+
+        function startClock() {
+            function update() {
+                const now = new Date();
+                const hh = String(now.getHours()).padStart(2, '0');
+                const mm = String(now.getMinutes()).padStart(2, '0');
+                document.getElementById('headerClock').textContent = `${hh}:${mm}`;
+            }
+            update();
+            setInterval(update, 10000);
+        }
+
+        // ========== ONLINE/OFFLINE ==========
+        function updateOnlineStatus() {
+            const dot = document.getElementById('syncDot');
+            const text = document.getElementById('syncText');
+            if (navigator.onLine) {
+                dot.className = 'sync-dot online';
+                text.textContent = 'オンライン';
+            } else {
+                dot.className = 'sync-dot';
+                text.textContent = 'オフライン';
+            }
+        }
+
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+
+        // ========== NAVIGATION ==========
+        function initNav() {
+            document.querySelectorAll('.nav-item').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const tabName = btn.dataset.tab;
+                    switchTab(tabName);
+                });
+            });
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
+
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+            if (tabName === 'dash') {
+                renderCurrentlyWorking();
+                renderMonthlyGrid();
+            }
+            if (tabName === 'records') renderRecords();
+            if (tabName === 'settings') renderSettings();
+        }
+
+        // ========== TOAST NOTIFICATIONS ==========
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <div class="toast-icon">${type === 'success' ? '✓' : type === 'error' ? '✕' : type === 'warning' ? '⚠' : 'ℹ'}</div>
+                <div class="toast-message">${message}</div>
+            `;
+            container.appendChild(toast);
+
+            if (duration > 0) {
+                setTimeout(() => toast.remove(), duration);
+            }
+
+            return toast;
+        }
+
+        // ========== CONFIRMATION MODAL ==========
+        function showConfirm(title, message) {
+            return new Promise((resolve) => {
+                document.getElementById('confirmTitle').textContent = title;
+                document.getElementById('confirmMessage').textContent = message;
+                const modal = document.getElementById('confirmModal');
+                modal.classList.add('active');
+
+                const cleanup = () => {
+                    modal.classList.remove('active');
+                    document.getElementById('confirmOk').removeEventListener('click', onOk);
+                    document.getElementById('confirmCancel').removeEventListener('click', onCancel);
+                };
+
+                const onOk = () => {
+                    cleanup();
+                    resolve(true);
+                };
+
+                const onCancel = () => {
+                    cleanup();
+                    resolve(false);
+                };
+
+                document.getElementById('confirmOk').addEventListener('click', onOk);
+                document.getElementById('confirmCancel').addEventListener('click', onCancel);
+            });
+        }
+
+        // ========== MICROSOFT GRAPH API ==========
+        function initMSAL() {
+            if (!CONFIG.clientId) return;
+
+            const msalConfig = {
+                auth: {
+                    clientId: CONFIG.clientId,
+                    authority: CONFIG.authority,
+                    redirectUri: CONFIG.redirectUri
+                },
+                cache: {
+                    cacheLocation: 'localStorage'
+                }
+            };
+
+            CONFIG.msalInstance = new msal.PublicClientApplication(msalConfig);
+        }
+
+        async function getAccessToken() {
+            if (!CONFIG.msalInstance) return null;
+
+            const accounts = CONFIG.msalInstance.getAllAccounts();
+            if (accounts.length === 0) return null;
+
+            try {
+                const result = await CONFIG.msalInstance.acquireTokenSilent({
+                    scopes: CONFIG.scopes,
+                    account: accounts[0]
+                });
+                return result.accessToken;
+            } catch (e) {
+                try {
+                    const result = await CONFIG.msalInstance.acquireTokenPopup({
+                        scopes: CONFIG.scopes
+                    });
+                    return result.accessToken;
+                } catch (err) {
+                    console.error('Token acquisition failed', err);
+                    return null;
+                }
+            }
+        }
+
+        async function graphRequest(url, method = 'GET', body = null) {
+            const token = await getAccessToken();
+            if (!token) throw new Error('Not authenticated');
+
+            const opts = {
+                method,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+
+            if (body) opts.body = JSON.stringify(body);
+
+            const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, opts);
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Graph API error: ${res.status} - ${errText}`);
+            }
+
+            if (method === 'DELETE') return null;
+
+            const text = await res.text();
+            return text ? JSON.parse(text) : null;
+        }
+
+        async function listExcelFiles() {
+            try {
+                const allFiles = new Map();
+
+                // Method 1: Search entire OneDrive
+                try {
+                    const searchData = await graphRequest("/me/drive/root/search(q='.xlsx')?$top=50&$select=id,name,parentReference,file");
+                    (searchData.value || []).forEach(f => {
+                        if (f.name.endsWith('.xlsx')) allFiles.set(f.id, f);
+                    });
+                } catch (e) { console.log('Search failed, trying fallback', e); }
+
+                // Method 2: List root children (fallback/supplement)
+                try {
+                    const rootData = await graphRequest("/me/drive/root/children?$select=id,name,parentReference,file&$top=100");
+                    (rootData.value || []).forEach(f => {
+                        if (f.file && f.name.endsWith('.xlsx')) allFiles.set(f.id, f);
+                    });
+                } catch (e) { console.log('Root listing failed', e); }
+
+                // Method 3: Check Documents folder
+                try {
+                    const docsData = await graphRequest("/me/drive/root:/Documents:/children?$select=id,name,parentReference,file&$top=100");
+                    (docsData.value || []).forEach(f => {
+                        if (f.file && f.name.endsWith('.xlsx')) allFiles.set(f.id, f);
+                    });
+                } catch (e) { /* Documents folder may not exist */ }
+
+                return Array.from(allFiles.values());
+            } catch (err) {
+                console.error('Failed to list Excel files', err);
+                return [];
+            }
+        }
+
+        async function readExcelSheet(fileId, sheetName) {
+            try {
+                const data = await graphRequest(`/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`);
+                return data.values || [];
+            } catch (err) {
+                console.error('Failed to read Excel sheet', err);
+                return [];
+            }
+        }
+
+        async function writeExcelSheet(fileId, sheetName, values) {
+            try {
+                // Ensure sheet exists
+                try {
+                    await graphRequest(`/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')`);
+                } catch {
+                    await graphRequest(`/me/drive/items/${fileId}/workbook/worksheets/add`, 'POST', { name: sheetName });
+                }
+
+                if (values.length === 0) return;
+
+                // Clear existing data
+                try {
+                    const range = await graphRequest(`/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`);
+                    if (range.address) {
+                        await graphRequest(
+                            `/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')/range(address='${range.address}')/clear`,
+                            'POST',
+                            { applyTo: 'All' }
+                        );
+                    }
+                } catch {}
+
+                // Write new data
+                const rows = values.length;
+                const cols = values[0].length;
+                const endCol = String.fromCharCode(64 + cols);
+                const address = `A1:${endCol}${rows}`;
+
+                await graphRequest(
+                    `/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')/range(address='${address}')`,
+                    'PATCH',
+                    { values }
+                );
+            } catch (err) {
+                console.error('Failed to write Excel sheet', err);
+                throw err;
+            }
+        }
+
+        // ========== EVENT LISTENERS ==========
+        function initEventListeners() {
+            // Scan Tab
+            document.getElementById('btnCheckIn').addEventListener('click', () => checkInEmployee('in'));
+            document.getElementById('btnCheckOut').addEventListener('click', () => checkInEmployee('out'));
+            document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
+
+            // Employee Management
+            document.getElementById('btnAddEmp').addEventListener('click', () => openEmpModal());
+            document.getElementById('empModalCancel').addEventListener('click', () => closeEmpModal());
+            document.getElementById('empForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                saveEmployee();
+            });
+
+            // Settings
+            document.getElementById('btnAuth').addEventListener('click', handleMicrosoftLogin);
+            document.getElementById('btnSelectExcel').addEventListener('click', selectExcelFile);
+            document.getElementById('excelModalCancel').addEventListener('click', () => {
+                document.getElementById('excelModal').classList.remove('active');
+            });
+            document.getElementById('excelRefreshBtn')?.addEventListener('click', () => {
+                populateExcelFileListSettings();
+            });
+            document.getElementById('excelModalSave').addEventListener('click', async () => {
+                const selected = document.querySelector('#excelFileListSettings .excel-file-option.selected');
+
+                if (!selected) {
+                    showToast('ファイルを選択してください', 'warning');
+                    return;
+                }
+
+                appState.excelFileId = selected.dataset.fileId;
+                appState.excelFileName = selected.dataset.fileName;
+                localStorage.setItem('kumon_excelFileId', appState.excelFileId);
+                localStorage.setItem('kumon_excelFileName', appState.excelFileName);
+                document.getElementById('excelModal').classList.remove('active');
+                renderSettings();
+                showToast('Excel ファイルを設定しました', 'success');
+            });
+            document.getElementById('btnAddLoc').addEventListener('click', addLocation);
+            document.getElementById('btnManualSync').addEventListener('click', syncToExcel);
+            document.getElementById('btnReset').addEventListener('click', async () => {
+                if (await showConfirm('リセット', 'すべてのデータが削除されます。本当に実行しますか？')) {
+                    localStorage.clear();
+                    location.reload();
+                }
+            });
+
+            // Records filter
+            document.getElementById('recordsFilterEmp').addEventListener('change', renderRecords);
+            document.getElementById('recordsFilterLoc').addEventListener('change', renderRecords);
+        }
+
+        // ========== SETUP WIZARD ==========
+        function showSetupWizard() {
+            document.getElementById('setupWizard').classList.add('active');
+            document.getElementById('wizard').classList.add('active');
+            document.getElementById('redirectUri').textContent = CONFIG.redirectUri;
+
+            document.getElementById('wizardStep1Next').addEventListener('click', () => {
+                const clientId = document.getElementById('clientId').value.trim();
+                if (!clientId) {
+                    showToast('クライアント ID を入力してください', 'warning');
+                    return;
+                }
+                CONFIG.clientId = clientId;
+                localStorage.setItem('kumon_clientId', clientId);
+                initMSAL();
+                nextWizardStep();
+            });
+
+            document.getElementById('wizardStep2Login').addEventListener('click', async () => {
+                if (!CONFIG.msalInstance) {
+                    initMSAL();
+                }
+                try {
+                    await CONFIG.msalInstance.loginPopup({ scopes: CONFIG.scopes });
+                    nextWizardStep();
+                    populateExcelFileList();
+                } catch (err) {
+                    showToast('ログインに失敗しました', 'error');
+                    console.error(err);
+                }
+            });
+
+            document.getElementById('wizardStep3Next').addEventListener('click', async () => {
+                let fileId = null;
+                const newName = document.getElementById('newExcelName').value.trim();
+
+                const selected = document.querySelector('.excel-file-option.selected');
+                if (selected) {
+                    fileId = selected.dataset.fileId;
+                    appState.excelFileName = selected.dataset.fileName;
+                } else if (newName) {
+                    try {
+                        showToast('Excel ファイルを作成中...', 'info', 0);
+                        const file = await createExcelFile(newName);
+                        fileId = file.id;
+                        appState.excelFileName = newName;
+                        document.querySelector('#toastContainer .toast').remove();
+                        showToast('ファイルを作成しました', 'success');
+                    } catch (err) {
+                        showToast('ファイル作成に失敗しました', 'error');
+                        console.error(err);
+                        return;
+                    }
+                } else {
+                    showToast('ファイルを選択または作成してください', 'warning');
+                    return;
+                }
+
+                appState.excelFileId = fileId;
+                localStorage.setItem('kumon_excelFileId', fileId);
+                localStorage.setItem('kumon_excelFileName', appState.excelFileName);
+                nextWizardStep();
+            });
+
+            document.getElementById('wizardStep3Back').addEventListener('click', prevWizardStep);
+            document.getElementById('wizardStep4Back').addEventListener('click', prevWizardStep);
+
+            document.getElementById('wizardStep4Finish').addEventListener('click', () => {
+                const locName = document.getElementById('locName').value.trim();
+                if (!locName) {
+                    showToast('拠点名を入力してください', 'warning');
+                    return;
+                }
+
+                const locId = 'loc_' + Date.now();
+                appState.locations.push({ id: locId, name: locName });
+                appState.currentLocationId = locId;
+                saveAppState();
+
+                document.getElementById('setupWizard').classList.remove('active');
+                document.getElementById('wizard').classList.remove('active');
+                loadAndRender();
+                showToast('セットアップが完了しました', 'success');
+            });
+
+            // Skip button — offline demo mode
+            document.getElementById('wizardSkipBtn').addEventListener('click', () => {
+                CONFIG.offlineMode = true;
+
+                // Set up a default location
+                const locId = 'loc_demo';
+                if (!appState.locations.find(l => l.id === locId)) {
+                    appState.locations.push({ id: locId, name: '本部教室' });
+                }
+                appState.currentLocationId = locId;
+
+                // Add demo employees
+                const demoEmps = [
+                    { id: 'emp_1', name: '田中 花子', dept: '算数', avatarSeed: '田中 花子', avatarStyle: 'adventurer', isIn: false, checkinTime: null },
+                    { id: 'emp_2', name: '鈴木 太郎', dept: '国語', avatarSeed: '鈴木 太郎', avatarStyle: 'avataaars', isIn: false, checkinTime: null },
+                    { id: 'emp_3', name: '佐藤 美咲', dept: '英語', avatarSeed: '佐藤 美咲', avatarStyle: 'pixel-art', isIn: false, checkinTime: null },
+                    { id: 'emp_4', name: '山田 健一', dept: '算数', avatarSeed: '山田 健一', avatarStyle: 'big-ears', isIn: false, checkinTime: null },
+                    { id: 'emp_5', name: '高橋 さくら', dept: '国語', avatarSeed: '高橋 さくら', avatarStyle: 'lorelei', isIn: false, checkinTime: null },
+                ];
+                demoEmps.forEach(e => {
+                    if (!appState.employees.find(x => x.id === e.id)) {
+                        appState.employees.push(e);
+                    }
+                });
+
+                saveAppState();
+                document.getElementById('setupWizard').classList.remove('active');
+                document.getElementById('wizard').classList.remove('active');
+                loadAndRender();
+                showToast('オフラインモードで起動しました', 'success');
+            });
+
+        }
+
+        function nextWizardStep() {
+            document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.progress-dot').forEach(d => d.classList.remove('active'));
+
+            const current = document.querySelector('.wizard-step.active');
+            const next = current?.nextElementSibling;
+            if (next?.classList.contains('wizard-step')) {
+                next.classList.add('active');
+                const steps = document.querySelectorAll('.wizard-step');
+                const idx = Array.from(steps).indexOf(next);
+                document.querySelectorAll('.progress-dot').forEach((d, i) => {
+                    if (i <= idx) d.classList.add('active');
+                });
+            }
+        }
+
+        function prevWizardStep() {
+            const current = document.querySelector('.wizard-step.active');
+            const prev = current?.previousElementSibling;
+            if (prev?.classList.contains('wizard-step')) {
+                document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+                document.querySelectorAll('.progress-dot').forEach(d => d.classList.remove('active'));
+                prev.classList.add('active');
+                const steps = document.querySelectorAll('.wizard-step');
+                const idx = Array.from(steps).indexOf(prev);
+                document.querySelectorAll('.progress-dot').forEach((d, i) => {
+                    if (i <= idx) d.classList.add('active');
+                });
+            }
+        }
+
+        async function populateExcelFileList() {
+            const listDiv = document.getElementById('excelFileList');
+            listDiv.innerHTML = '';
+
+            try {
+                const files = await listExcelFiles();
+                if (files.length === 0) {
+                    listDiv.innerHTML = '<p style="color: var(--ink2); font-size: 12px;">OneDrive に Excel ファイルがありません。下で新しいファイルを作成してください。</p>';
+                    return;
+                }
+
+                const html = files.map(f => `
+                    <div class="excel-file-option" data-file-id="${f.id}" data-file-name="${f.name}">
+                        <div style="font-size: 13px; font-weight: 600;">${f.name}</div>
+                        <div style="font-size: 11px; color: var(--ink2);">${f.createdDateTime ? new Date(f.createdDateTime).toLocaleDateString('ja-JP') : ''}</div>
+                    </div>
+                `).join('');
+
+                listDiv.innerHTML = html;
+                listDiv.querySelectorAll('.excel-file-option').forEach(opt => {
+                    opt.addEventListener('click', () => {
+                        listDiv.querySelectorAll('.excel-file-option').forEach(o => o.classList.remove('selected'));
+                        opt.classList.add('selected');
+                    });
+                });
+            } catch (err) {
+                showToast('Excel ファイルの取得に失敗しました', 'error');
+                console.error(err);
+            }
+        }
+
+        async function createExcelFile(fileName) {
+            try {
+                // Minimal valid xlsx file (base64 encoded)
+                const xlsxBase64 = 'UEsDBBQAAAAIAAAAAACKIYazWwAAAGEAAAATABwAW0NvbnRlbnRfVHlwZXNdLnhtbFVUCQADAAAAAAAAAE2OzQrCMBCE74LvEHIV0+pBRJr2oOJV6wOEdNsG252Q3R99e7egeBpm+JiZLKvr0KsLReo8G1gnKSjixtcdtwY+m7flDhQVZLV6z4YMjUQqsyMp7DUlGgclKeQ+UOPbzsfhK+d2aTX7lDvKVqIh81M1iiTXRjnx/xYEHzcS0HwMihrg0Sl4YFfD7wBQSwMEFAAAAAgAAAAAAIGwH3mzAAAA+QAAABEAHABkb2NQcm9wcy9jb3JlLnhtbFVUCQADAAAAAAAAAE2QQQ6CQBBE7ya+gel9gNGDMQ5w0JveZKCBSaZnyHQj+HtnQKN7qa5f1cvPmu3Q2eITfDCOBaxYARLJuNpQI+BUH+c7UISaau0coYARAmyz+0vbtbxO7+0DBBkhiUEJaJHbnHMfW7A6LF0HlF5X562OKfQN77T51A3w9WKx4RZR1xo1n4hkM1F90P5h1RPOwWgz2d+WxVzyn/3sC1BLAwQUAAAACAAAAAAApb3M+rEAAAD8AAAADwAcAGRvY1Byb3BzL2FwcC54bWxVVAkAAwAAAAAAAABNjsEKwjAQRO+C/7DkblI9iEjTHlS86gcsSdoGm92Q3Yr+vVtQvM0w8xiKep7s6ENMzqOGHWdQgDeuTqnV8Do/VgdQxDrVevCo4YsS1OVlEbv0ZJgTFdkkpQE3iB0iJjPjFBOPD1x2t7J+4v9rRYjJEbWhxBaz/INXi5HdR7X3LZmAYvktfwBQSwMEFAAAAAgAAAAAAGBM7HlqAAAAfgAAABMAHAB4bC93b3JrYm9vay54bWxVVAkAAwAAAAAAAABNjkEKwCAMRPeF3kGytzfooofi/S8hUqF0Y0b/w0Cv4MKNM6l1mCXZFJPTRG/hEOMMCZi0K/weLFk4xfCc73K3KPiRLqwBUEsDBBQAAAAIAAAAAAC8BjO9lAAAAL4AAAANABwAeGwvc3R5bGVzLnhtbFVUCQADAAAAAAAAAE2OQQrCQAxF94LnCNmLUxeipO1C0a3oAcJ0pgbaTMhkxHp6p6DgJo/8/wgU57lTn5B48Gx0llpQwS3xzM7oO//aZHtQIqFVHWeu9aXZPjh5Zx89QKyN3rJA88nPpsgYSfJEb2EjJVPSvf95YAGkX/bJAg9mOu3TW6R/kR9QSwMEFAAAAAgAAAAAAC0EFDReAAAAeQAAAA4AHABkb2NQcm9wcy9jb3JlLnhtbFVUCQADAAAAAAAAADWOywrCMBBF94L/MHTfpC5EpGkXKm5F/YAhnbbBZiZksqJ/bwoW1nA5cC+yej/Y6hMCW88GKlECA2R8YakxcKuvyy0oipqs7jwjw4gEKjvLY9c/CtGE1FjnRiJT9QZaxDaXkogz2JBE3wGnl8oHl9JMPfcx6cLgF/Xy4IDalJLr/lYkPfhq+2L0H1BLAwQUAAAACAAAAAAARkCkjJYAAAC8AAAAGAAcAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbFVUCQADAAAAAAAAAE2OywrCMBBF94L/0LDXxm5EpGkX+tiqH5BkJjZox5JJi/69qSi4u5x7L/KquF7t4JVCyzeTojKQgHFeB+8MvM6P1Q4USXJV2fm21he+4F5sCUvgTiQ51i2m2KhP4dPIh3w9MvOVY4j3r3iNq8NWG/c7c8qJnTw76J3IgX+wnx9QSwMEFAAAAAgAAAAAAOgRhIatAAAA/gAAABMAHABbQ29udGVudF9UeXBlc10ueG1sVVQJAAMAAAAAAAAAhc9BDsIgEAXQvYl3INNdS+NCTGl3Ku5QBsgkMEP+ULS3l1Y3bl/m/8mU1W2c/OOKiQZmA0VeQIJseHDsG/i8tlcZJFIlwZPOZmBGSmV54oTW5KVDhKsWk9A8HhLJ5hwvhJzYJJECPy+rT2vA+oQn+PScjfAr/lKOuBmO0UfqwOfC+w1sJSRqFQ/8fOANUEsDBBQAAAAIAAAAAAB/MQibVwAAAF4AAAALABwAX3JlbHMvLnJlbHNVVAkAAwAAAABNjjEOwCAMRPcK97BYZWgURdkYsqL0AI5xEFLAyDb3x8OAupqn/6S83vdpdU10rh4DtKIGBTR4c+AVw/z8GHagqFRi5dPqulhIuR1q0cFiWbMXnbpkIsz3y2bfvyeqBvKC+vwAUEsBAh4DFAAAAAgAAAAAAIohhrNbAAAAYQAAABMAGAAAAAAAAAAAAKSBAAAAAFtDb250ZW50X1R5cGVzXS54bWxVVAUAAwAAAAB1eAsAAQT2AQAABBQAAABQSwECHgMUAAAACAAAAAAAgbAfeYsAAAD5AAAARQAIAAAAAAABAAAAAKSBKQAAAGR/Y1Byb3BzL2NvcmUueG1sVVQEAAMAAAAAUEsBAh4DFAAAAAgAAAAAAKW9zPqxAAAA/AAAAA8AGAAAAAAAAQAAAKSBqAAAAGRvY1Byb3BzL2FwcC54bWxVVAUAAwAAAAB1eAsAAQT2AQAABBQAAABQSwECHgMUAAAACAAAAAAA/YEseWoAAAB+AAAAE1AYAAAAAAAAAAAAAKSBHAEAAHB4bC93b3JrYm9vay54bWxVVAUAAwAAAAB1eAsAAQT2AQAABBQAAABQSwECHgMUAAAACAAAAAAAvAYzvZQAAAC+AAAADQAYAAAAAAAAAAAAAKSBZAEAAHB4bC9zdHlsZXMueG1sVVQFAAMAAAAAeXgLAAEE9gEAAAQUAAAAUEsBAh4DFAAAAAgAAAAAAC0EFDReAAAAeQAAAA4AGAAAAAAAAQAAAKSBzAIAAGRvY1Byb3BzL2NvcmUueG1sVVQFAAMAAAAAeXgLAAEE9gEAAAQUAAAAUEsBAh4DFAAAAAgAAAAAAEZApIyWAAAAvAAAABgAGAAAAAAAAAAAAKSBPgMAAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbFVUBQADAAAAAHV4CwABBPYBAAAEFAAAAFBLAQIeAxQAAAAIAAAAAADoEYSGrQAAAP4AAAATABgAAAAAAAEAAACkgdgDAABbQ29udGVudF9UeXBlc10ueG1sVVQFAAMAAAAAeXgLAAEE9gEAAAQUAAAAUEsBAh4DFAAAAAgAAAAAAH8xCJtXAAAAXgAAAAsAGAAAAAAAAAAAAKSBmgQAAF9yZWxzLy5yZWxzVVQFAAMAAAAAeXgLAAEE9gEAAAQUAAAAUEsFBgAAAAAJAAkAfwIAAP0EAAAAAA==';
+
+                // Upload as valid xlsx file
+                const token = await getAccessToken();
+                if (!token) throw new Error('Not authenticated');
+
+                const binaryStr = atob(xlsxBase64);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) {
+                    bytes[i] = binaryStr.charCodeAt(i);
+                }
+
+                const res = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(fileName)}:/content`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    },
+                    body: bytes.buffer
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(`Upload failed: ${res.status} - ${errText}`);
+                }
+
+                return await res.json();
+            } catch (err) {
+                console.error('Failed to create Excel file', err);
+                throw err;
+            }
+        }
+
+        // ========== MICROSOFT LOGIN ==========
+        async function handleMicrosoftLogin() {
+            if (!CONFIG.msalInstance) {
+                showToast('MSAL が初期化されていません', 'error');
+                return;
+            }
+
+            try {
+                // Fresh login - select_account lets user pick which account
+                await CONFIG.msalInstance.loginPopup({
+                    scopes: CONFIG.scopes,
+                    prompt: 'select_account'
+                });
+                renderSettings();
+                showToast('ログインしました', 'success');
+            } catch (err) {
+                showToast('ログインに失敗しました', 'error');
+                console.error(err);
+            }
+        }
+
+        // ========== AVATAR HELPER ==========
+        function getAvatarUrl(seed, style) {
+            style = style || 'adventurer';
+            return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
+        }
+
+        // ========== EMPLOYEE MANAGEMENT ==========
+        let editingEmployeeId = null;
+
+        function openEmpModal() {
+            document.getElementById('empModalTitle').textContent = '従業員を追加';
+            document.getElementById('empForm').reset();
+            document.getElementById('empName').focus();
+
+            editingEmployeeId = null;
+            populateAvatarPicker();
+            document.getElementById('empModal').classList.add('active');
+        }
+
+        function closeEmpModal() {
+            document.getElementById('empModal').classList.remove('active');
+            editingEmployeeId = null;
+        }
+
+        function populateAvatarPicker() {
+            const styles = [
+                { key: 'adventurer', label: 'アドベンチャー' },
+                { key: 'avataaars', label: 'アバター' },
+                { key: 'big-ears', label: 'ビッグイヤー' },
+                { key: 'bottts', label: 'ロボット' },
+                { key: 'lorelei', label: 'ロレライ' },
+                { key: 'notionists', label: 'ノーショニスト' },
+                { key: 'open-peeps', label: 'ピープル' },
+                { key: 'pixel-art', label: 'ピクセル' },
+                { key: 'thumbs', label: 'サムズ' }
+            ];
+            const picker = document.getElementById('avatarStylePicker');
+            const nameInput = document.getElementById('empName');
+            picker.innerHTML = '';
+
+            const updatePreview = () => {
+                const name = nameInput.value.trim() || 'user';
+                const selectedStyle = picker.querySelector('.avatar-style-option.selected');
+                const style = selectedStyle?.dataset.style || 'adventurer';
+                const preview = document.getElementById('avatarPreview');
+                const previewImg = preview.querySelector('img');
+                previewImg.src = getAvatarUrl(name, style);
+            };
+
+            styles.forEach(style => {
+                const opt = document.createElement('div');
+                opt.className = 'avatar-style-option';
+                opt.dataset.style = style.key;
+                const name = nameInput.value.trim() || 'user';
+                opt.innerHTML = `
+                    <img src="${getAvatarUrl(name, style.key)}" alt="${style.label}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2260%22 height=%2260%22%3E%3Crect fill=%22%23f0f0f0%22 width=%2260%22 height=%2260%22/%3E%3Ctext x=%2230%22 y=%2240%22 text-anchor=%22middle%22 font-size=%2220%22%3E👤%3C/text%3E%3C/svg%3E'">
+                    <div class="avatar-style-option-label">${style.label}</div>
+                `;
+                opt.addEventListener('click', () => {
+                    picker.querySelectorAll('.avatar-style-option').forEach(o => o.classList.remove('selected'));
+                    opt.classList.add('selected');
+                    updatePreview();
+                });
+                picker.appendChild(opt);
+            });
+
+            // Select first style by default
+            picker.querySelector('.avatar-style-option').click();
+
+            // Update all previews when name changes
+            nameInput.addEventListener('input', () => {
+                const name = nameInput.value.trim() || 'user';
+                picker.querySelectorAll('.avatar-style-option img').forEach(img => {
+                    const style = img.closest('.avatar-style-option').dataset.style;
+                    img.src = getAvatarUrl(name, style);
+                });
+                updatePreview();
+            });
+        }
+
+        function saveEmployee() {
+            const name = document.getElementById('empName').value.trim();
+            const dept = document.getElementById('empDept').value.trim();
+            const styleOpt = document.querySelector('.avatar-style-option.selected');
+            const avatarStyle = styleOpt?.dataset.style || 'adventurer';
+            const avatarSeed = name || 'user';
+
+            if (!name || !dept) {
+                showToast('名前と部署を入力してください', 'warning');
+                return;
+            }
+
+            if (editingEmployeeId) {
+                // Update existing employee
+                const emp = appState.employees.find(e => e.id === editingEmployeeId);
+                if (emp) {
+                    emp.name = name;
+                    emp.dept = dept;
+                    emp.avatarSeed = avatarSeed;
+                    emp.avatarStyle = avatarStyle;
+                    // Keep emoji for backward compatibility
+                    if (!emp.emoji) emp.emoji = undefined;
+                    saveAppState();
+                    closeEmpModal();
+                    loadAndRender();
+                    showToast(`${name} を更新しました`, 'success');
+                }
+            } else {
+                // Create new employee
+                const emp = {
+                    id: 'emp_' + Date.now(),
+                    name,
+                    dept,
+                    avatarSeed,
+                    avatarStyle,
+                    isIn: false,
+                    checkinTime: null
+                };
+
+                appState.employees.push(emp);
+                saveAppState();
+                closeEmpModal();
+                loadAndRender();
+                showToast(`${name} を追加しました`, 'success');
+            }
+        }
+
+        function editEmployee(empId) {
+            const emp = appState.employees.find(e => e.id === empId);
+            if (!emp) return;
+
+            editingEmployeeId = empId;
+            document.getElementById('empModalTitle').textContent = '従業員を編集';
+            document.getElementById('empName').value = emp.name;
+            document.getElementById('empDept').value = emp.dept;
+
+            populateAvatarPicker();
+            const style = emp.avatarStyle || 'adventurer';
+            const styles = document.querySelectorAll('.avatar-style-option');
+            styles.forEach(opt => {
+                if (opt.dataset.style === style) {
+                    opt.click();
+                }
+            });
+
+            document.getElementById('empModal').classList.add('active');
+        }
+
+        // ========== CHECK IN / OUT ==========
+        async function checkInEmployee(type) {
+            if (!appState.selectedEmployeeId) {
+                showToast('従業員を選択してください', 'warning');
+                return;
+            }
+
+            const emp = appState.employees.find(e => e.id === appState.selectedEmployeeId);
+            if (!emp) return;
+
+            const now = new Date();
+            const ts = now.toISOString();
+            const displayTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+            if (type === 'in') {
+                emp.isIn = true;
+                emp.checkinTime = ts;
+                showToast(`${emp.name} が出勤しました`, 'success');
+            } else {
+                emp.isIn = false;
+                showToast(`${emp.name} が退勤しました`, 'success');
+            }
+
+            const locId = appState.currentLocationId;
+            const loc = appState.locations.find(l => l.id === locId);
+
+            if (type === 'in') {
+                // Always create a new record for each check-in
+                const record = {
+                    date: now.toISOString().split('T')[0],
+                    empId: emp.id,
+                    empName: emp.name,
+                    empDept: emp.dept,
+                    location: loc?.name || '未設定',
+                    inTs: ts,
+                    outTs: null
+                };
+                appState.records.push(record);
+            } else {
+                // Find the most recent open record (has inTs but no outTs) for this employee
+                const openRecord = [...appState.records]
+                    .reverse()
+                    .find(r => r.empId === emp.id && r.inTs && !r.outTs);
+
+                if (openRecord) {
+                    openRecord.outTs = ts;
+                } else {
+                    // No open record found - create a standalone out record
+                    const record = {
+                        date: now.toISOString().split('T')[0],
+                        empId: emp.id,
+                        empName: emp.name,
+                        empDept: emp.dept,
+                        location: loc?.name || '未設定',
+                        inTs: null,
+                        outTs: ts
+                    };
+                    appState.records.push(record);
+                }
+            }
+
+            saveAppState();
+            loadAndRender();
+
+            // Sync in background - don't block UI on failure
+            if (appState.excelFileId && navigator.onLine) {
+                syncToExcel().catch(err => console.error('Background sync failed', err));
+            }
+        }
+
+        // ========== ATTENDANCE ROUNDING ==========
+        function roundUpTo15Min(date) {
+            const time = date.getTime();
+            const rounded = Math.ceil(time / (15 * 60 * 1000)) * (15 * 60 * 1000);
+            return new Date(rounded);
+        }
+
+        function roundDownTo15Min(date) {
+            const time = date.getTime();
+            const rounded = Math.floor(time / (15 * 60 * 1000)) * (15 * 60 * 1000);
+            return new Date(rounded);
+        }
+
+        // ========== RENDERING ==========
+        function loadAndRender() {
+            renderScanTab();
+            updateDashboardStats();
+            renderEmployeeGrid();
+            updateActivityFeed();
+        }
+
+        function renderScanTab() {
+            const grid = document.getElementById('scanEmployeeGrid');
+            grid.innerHTML = '';
+
+            if (appState.employees.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--ink2); padding: 20px;">従業員を追加してください</div>';
+                return;
+            }
+
+            // Show all employees regardless of location
+            appState.employees.forEach(emp => {
+                const div = document.createElement('div');
+                div.className = 'employee-item' + (emp.id === appState.selectedEmployeeId ? ' selected' : '');
+                let avatarHtml = '';
+                if (emp.emoji) {
+                    // Backward compatibility: show emoji if it exists
+                    avatarHtml = `<div class="emp-avatar">${emp.emoji}</div>`;
+                } else {
+                    // Use avatar image
+                    const seed = emp.avatarSeed || emp.name;
+                    const style = emp.avatarStyle || 'adventurer';
+                    avatarHtml = `<div class="emp-avatar"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
+                }
+                div.innerHTML = `
+                    ${avatarHtml}
+                    <div class="emp-name">${emp.name}</div>
+                    <div class="emp-status ${emp.isIn ? 'in' : 'out'}">${emp.isIn ? '出勤中' : '退勤済'}</div>
+                `;
+                div.addEventListener('click', () => selectEmployee(emp.id));
+                grid.appendChild(div);
+            });
+        }
+
+        function selectEmployee(empId) {
+            appState.selectedEmployeeId = empId;
+            renderScanTab();
+
+            const emp = appState.employees.find(e => e.id === empId);
+            if (!emp) return;
+
+            const info = document.getElementById('selectedInfo');
+            info.classList.add('active');
+            const avatarEl = document.getElementById('selectedAvatar');
+            if (emp.emoji) {
+                // Backward compatibility
+                avatarEl.innerHTML = emp.emoji;
+            } else {
+                // Use avatar image
+                const seed = emp.avatarSeed || emp.name;
+                const style = emp.avatarStyle || 'adventurer';
+                avatarEl.innerHTML = `<img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+            }
+            document.getElementById('selectedName').textContent = emp.name;
+            document.getElementById('selectedDept').textContent = emp.dept;
+
+            const today = new Date().toISOString().split('T')[0];
+            const record = appState.records.find(r => r.empId === empId && r.date === today);
+
+            if (record?.inTs) {
+                const inDate = new Date(record.inTs);
+                document.getElementById('todayCheckIn').textContent = `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}`;
+            } else {
+                document.getElementById('todayCheckIn').textContent = '--:--';
+            }
+
+            if (record?.outTs) {
+                const outDate = new Date(record.outTs);
+                document.getElementById('todayCheckOut').textContent = `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}`;
+            } else {
+                document.getElementById('todayCheckOut').textContent = '--:--';
+            }
+        }
+
+        function updateDashboardStats() {
+            const today = new Date().toISOString().split('T')[0];
+            const todayRecords = appState.records.filter(r => r.date === today);
+
+            const checkIn = appState.employees.filter(e => e.isIn).length;
+
+            document.getElementById('statCheckIn').textContent = checkIn;
+            document.getElementById('statStamps').textContent = todayRecords.length;
+        }
+
+        function renderEmployeeGrid() {
+            const grid = document.getElementById('empGrid');
+            const noMsg = document.getElementById('noEmpMsg');
+
+            if (appState.employees.length === 0) {
+                grid.innerHTML = '';
+                noMsg.style.display = 'block';
+                return;
+            }
+
+            noMsg.style.display = 'none';
+            grid.innerHTML = '';
+
+            appState.employees.forEach(emp => {
+                const card = document.createElement('div');
+                card.className = 'emp-card';
+                let avatarHtml = '';
+                if (emp.emoji) {
+                    // Backward compatibility: show emoji if it exists
+                    avatarHtml = `<div class="emp-card-emoji">${emp.emoji}</div>`;
+                } else {
+                    // Use avatar image
+                    const seed = emp.avatarSeed || emp.name;
+                    const style = emp.avatarStyle || 'adventurer';
+                    avatarHtml = `<div class="emp-card-emoji"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
+                }
+                card.innerHTML = `
+                    ${avatarHtml}
+                    <div class="emp-card-name">${emp.name}</div>
+                    <div class="emp-card-dept">${emp.dept}</div>
+                    <div class="emp-mgmt-toolbar">
+                        <button class="btn btn-secondary btn-small" onclick="editEmployee('${emp.id}')">編集</button>
+                        <button class="btn btn-danger btn-small" onclick="deleteEmployee('${emp.id}')">削除</button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        async function deleteEmployee(empId) {
+            const emp = appState.employees.find(e => e.id === empId);
+            if (!emp) return;
+
+            if (await showConfirm('削除', `${emp.name} を削除しますか？`)) {
+                appState.employees = appState.employees.filter(e => e.id !== empId);
+                saveAppState();
+                renderEmployeeGrid();
+                showToast(`${emp.name} を削除しました`, 'success');
+            }
+        }
+
+        function updateActivityFeed() {
+            const today = new Date().toISOString().split('T')[0];
+            const todayRecords = appState.records.filter(r => r.date === today);
+            const feed = document.getElementById('activityFeed');
+
+            if (todayRecords.length === 0) {
+                feed.innerHTML = '<div class="feed-empty">本日の打刻はまだありません</div>';
+                return;
+            }
+
+            const items = [];
+            todayRecords.forEach(r => {
+                if (r.inTs) {
+                    const date = new Date(r.inTs);
+                    items.push({
+                        ts: date,
+                        text: `${r.empName} が出勤しました`,
+                        emoji: '📍'
+                    });
+                }
+                if (r.outTs) {
+                    const date = new Date(r.outTs);
+                    items.push({
+                        ts: date,
+                        text: `${r.empName} が退勤しました`,
+                        emoji: '🚪'
+                    });
+                }
+            });
+
+            items.sort((a, b) => b.ts - a.ts);
+
+            feed.innerHTML = items.slice(0, 10).map(item => `
+                <div class="feed-item">
+                    <div class="feed-emoji">${item.emoji}</div>
+                    <div class="feed-content">
+                        <div class="feed-text">${item.text}</div>
+                        <div class="feed-time">${String(item.ts.getHours()).padStart(2, '0')}:${String(item.ts.getMinutes()).padStart(2, '0')}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderDashboard() {
+            // Currently working list
+            renderCurrentlyWorking();
+
+            // Monthly grid
+            renderMonthlyGrid();
+        }
+
+        function renderCurrentlyWorking() {
+            const container = document.getElementById('currentlyWorking');
+            const checkedInEmps = appState.employees.filter(e => e.isIn);
+
+            if (checkedInEmps.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--ink2); padding: 20px;">出勤している従業員はいません</div>';
+                return;
+            }
+
+            container.innerHTML = checkedInEmps.map(emp => {
+                const today = new Date().toISOString().split('T')[0];
+                const record = appState.records.find(r => r.empId === emp.id && r.date === today);
+
+                let checkinDisplay = '--:--';
+                let durationDisplay = '0分';
+
+                if (record?.inTs) {
+                    const inDate = new Date(record.inTs);
+                    checkinDisplay = `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}`;
+
+                    const now = new Date();
+                    const durationMs = now - inDate;
+                    const durationMins = Math.floor(durationMs / 60000);
+                    if (durationMins >= 60) {
+                        const hours = Math.floor(durationMins / 60);
+                        const mins = durationMins % 60;
+                        durationDisplay = `${hours}時間${mins}分`;
+                    } else {
+                        durationDisplay = `${durationMins}分`;
+                    }
+                }
+
+                let avatarHtml = '';
+                if (emp.emoji) {
+                    // Backward compatibility: show emoji if it exists
+                    avatarHtml = `<div class="currently-working-emoji">${emp.emoji}</div>`;
+                } else {
+                    // Use avatar image
+                    const seed = emp.avatarSeed || emp.name;
+                    const style = emp.avatarStyle || 'adventurer';
+                    avatarHtml = `<div class="currently-working-emoji"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
+                }
+
+                return `
+                    <div class="currently-working-item">
+                        ${avatarHtml}
+                        <div class="currently-working-info">
+                            <div class="currently-working-name">${emp.name}</div>
+                            <div class="currently-working-dept">${emp.dept} · ${record?.location || '未設定'}</div>
+                            <div class="currently-working-time">出勤: ${checkinDisplay} (${durationDisplay})</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderMonthlyGrid() {
+            const container = document.getElementById('monthlyGrid');
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth();
+
+            // Get days in month
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            // Get all employees
+            const employees = appState.employees;
+
+            if (employees.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--ink2); padding: 20px;">従業員がいません</div>';
+                return;
+            }
+
+            // Build month data: map of empId -> day -> hours
+            const monthData = {};
+            employees.forEach(emp => {
+                monthData[emp.id] = {};
+            });
+
+            const monthStart = new Date(year, month, 1);
+            appState.records.forEach(r => {
+                const rDate = new Date(r.date);
+                if (rDate >= monthStart && rDate.getMonth() === month && rDate.getFullYear() === year) {
+                    if (!monthData[r.empId]) monthData[r.empId] = {};
+
+                    let hours = 0;
+                    if (r.inTs && r.outTs) {
+                        const inDate = new Date(r.inTs);
+                        const outDate = new Date(r.outTs);
+                        hours = (outDate - inDate) / (1000 * 3600);
+                    }
+
+                    const day = new Date(r.date).getDate();
+                    monthData[r.empId][day] = (monthData[r.empId][day] || 0) + hours;
+                }
+            });
+
+            // Build table HTML
+            let html = '<table class="monthly-grid"><thead><tr>';
+            html += '<th>氏名</th>';
+            for (let day = 1; day <= daysInMonth; day++) {
+                html += `<th>${day}</th>`;
+            }
+            html += '<th>累計</th></tr></thead><tbody>';
+
+            employees.forEach(emp => {
+                html += '<tr>';
+                html += `<td>${emp.name}</td>`;
+
+                let monthTotal = 0;
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const hours = monthData[emp.id][day] || 0;
+                    monthTotal += hours;
+
+                    if (hours > 0) {
+                        html += `<td class="grid-cell-worked">${hours.toFixed(1)}</td>`;
+                    } else {
+                        html += `<td class="grid-cell-empty">-</td>`;
+                    }
+                }
+
+                html += `<td class="grid-cell-total">${monthTotal.toFixed(1)}</td>`;
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function renderRecords() {
+            const filterEmp = document.getElementById('recordsFilterEmp').value;
+            const filterLoc = document.getElementById('recordsFilterLoc').value;
+
+            let filtered = appState.records;
+            if (filterEmp) filtered = filtered.filter(r => r.empId === filterEmp);
+            if (filterLoc) filtered = filtered.filter(r => r.location === filterLoc);
+
+            const tbody = document.getElementById('recordsTableBody');
+            tbody.innerHTML = '';
+
+            filtered.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(r => {
+                const inDate = r.inTs ? new Date(r.inTs) : null;
+                const outDate = r.outTs ? new Date(r.outTs) : null;
+
+                let payInTime = '--:--';
+                let payOutTime = '--:--';
+                if (inDate) {
+                    const rounded = roundUpTo15Min(inDate);
+                    payInTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                }
+                if (outDate) {
+                    const rounded = roundDownTo15Min(outDate);
+                    payOutTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                }
+
+                let duration = '--:--';
+                if (inDate && outDate) {
+                    const hours = Math.floor((outDate - inDate) / (1000 * 3600));
+                    const mins = Math.floor(((outDate - inDate) / (1000 * 60)) % 60);
+                    duration = `${hours}:${String(mins).padStart(2, '0')}`;
+                }
+
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${r.date}</td>
+                    <td>${r.empName}</td>
+                    <td>${r.empDept}</td>
+                    <td>${r.location}</td>
+                    <td>${inDate ? `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}` : '--:--'}</td>
+                    <td>${outDate ? `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}` : '--:--'}</td>
+                    <td>${payInTime}</td>
+                    <td>${payOutTime}</td>
+                    <td>${duration}</td>
+                `;
+            });
+
+            // Update filters
+            const empSelect = document.getElementById('recordsFilterEmp');
+            const locSelect = document.getElementById('recordsFilterLoc');
+
+            const empSet = new Set(appState.records.map(r => r.empId));
+            empSelect.innerHTML = '<option value="">すべて</option>';
+            appState.employees.forEach(e => {
+                if (empSet.has(e.id)) {
+                    const opt = document.createElement('option');
+                    opt.value = e.id;
+                    opt.textContent = e.name;
+                    empSelect.appendChild(opt);
+                }
+            });
+
+            const locSet = new Set(appState.records.map(r => r.location));
+            locSelect.innerHTML = '<option value="">すべて</option>';
+            locSet.forEach(loc => {
+                const opt = document.createElement('option');
+                opt.value = loc;
+                opt.textContent = loc;
+                locSelect.appendChild(opt);
+            });
+        }
+
+        function renderSettings() {
+            const authStatus = document.getElementById('authStatus');
+            const btnAuth = document.getElementById('btnAuth');
+
+            if (CONFIG.msalInstance) {
+                const accounts = CONFIG.msalInstance.getAllAccounts();
+                if (accounts.length > 0) {
+                    authStatus.textContent = accounts[0].username || 'ログイン済み';
+                    btnAuth.textContent = '再ログイン';
+                } else {
+                    authStatus.textContent = '未認証';
+                    btnAuth.textContent = 'ログイン';
+                }
+            }
+
+            document.getElementById('excelFileInfo').textContent = appState.excelFileName || 'なし';
+            document.getElementById('lastSyncTime').textContent = appState.lastSyncTime
+                ? new Date(appState.lastSyncTime).toLocaleString('ja-JP')
+                : '未実施';
+
+            const locList = document.getElementById('locationList');
+            locList.innerHTML = '';
+            appState.locations.forEach(loc => {
+                const item = document.createElement('div');
+                item.className = 'location-item' + (loc.id === appState.currentLocationId ? ' current' : '');
+                item.innerHTML = `
+                    <div>${loc.name}</div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-secondary btn-small" onclick="selectLocation('${loc.id}')">選択</button>
+                        <button class="btn btn-danger btn-small" onclick="deleteLocation('${loc.id}')">削除</button>
+                    </div>
+                `;
+                locList.appendChild(item);
+            });
+        }
+
+        function selectLocation(locId) {
+            appState.currentLocationId = locId;
+            localStorage.setItem('kumon_currentLocationId', locId);
+            renderSettings();
+            updateLocationBadge();
+            showToast('拠点を選択しました', 'success');
+        }
+
+        async function deleteLocation(locId) {
+            const loc = appState.locations.find(l => l.id === locId);
+            if (!loc) return;
+
+            if (await showConfirm('削除', `${loc.name} を削除しますか？`)) {
+                appState.locations = appState.locations.filter(l => l.id !== locId);
+                if (appState.currentLocationId === locId) {
+                    appState.currentLocationId = appState.locations[0]?.id || null;
+                }
+                saveAppState();
+                renderSettings();
+                updateLocationBadge();
+                showToast(`${loc.name} を削除しました`, 'success');
+            }
+        }
+
+        function addLocation() {
+            const input = document.getElementById('locInput');
+            const name = input.value.trim();
+
+            if (!name) {
+                showToast('拠点名を入力してください', 'warning');
+                return;
+            }
+
+            if (appState.locations.some(l => l.name === name)) {
+                showToast('その拠点は既に存在します', 'warning');
+                return;
+            }
+
+            appState.locations.push({
+                id: 'loc_' + Date.now(),
+                name
+            });
+
+            saveAppState();
+            input.value = '';
+            renderSettings();
+            showToast(`${name} を追加しました`, 'success');
+        }
+
+        function selectExcelFile() {
+            document.getElementById('excelModal').classList.add('active');
+            populateExcelFileListSettings();
+        }
+
+        async function populateExcelFileListSettings() {
+            const container = document.getElementById('excelFileListSettings');
+            container.innerHTML = '<div style="text-align: center; color: var(--ink3); padding: 12px;">読み込み中...</div>';
+            try {
+                const files = await listExcelFiles();
+                if (files.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; color: var(--ink3); padding: 12px;">Excel ファイルが見つかりません</div>';
+                    return;
+                }
+                container.innerHTML = '';
+                files.forEach(f => {
+                    const div = document.createElement('div');
+                    div.className = 'excel-file-option';
+                    div.dataset.fileId = f.id;
+                    div.dataset.fileName = f.name;
+                    const folder = f.parentReference?.path?.replace('/drive/root:', '') || '';
+                    div.innerHTML = `<strong>${f.name}</strong>${folder ? `<br><span style="font-size:11px;color:var(--ink3);">${folder}/</span>` : ''}`;
+                    if (f.id === appState.excelFileId) div.classList.add('selected');
+                    div.addEventListener('click', () => {
+                        container.querySelectorAll('.excel-file-option').forEach(o => o.classList.remove('selected'));
+                        div.classList.add('selected');
+                    });
+                    container.appendChild(div);
+                });
+            } catch (err) {
+                container.innerHTML = '<div style="text-align: center; color: var(--red); padding: 12px;">ファイル一覧の取得に失敗しました</div>';
+                console.error(err);
+            }
+        }
+
+        function exportCSV() {
+            const filterEmp = document.getElementById('recordsFilterEmp').value;
+            const filterLoc = document.getElementById('recordsFilterLoc').value;
+
+            let filtered = appState.records;
+            if (filterEmp) filtered = filtered.filter(r => r.empId === filterEmp);
+            if (filterLoc) filtered = filtered.filter(r => r.location === filterLoc);
+
+            const rows = [
+                ['日付', '氏名', '部署', '拠点', '出勤打刻', '退勤打刻', '給与用出勤', '給与用退勤', '勤務時間']
+            ];
+
+            filtered.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(r => {
+                const inDate = r.inTs ? new Date(r.inTs) : null;
+                const outDate = r.outTs ? new Date(r.outTs) : null;
+
+                let payInTime = '--:--';
+                let payOutTime = '--:--';
+                if (inDate) {
+                    const rounded = roundUpTo15Min(inDate);
+                    payInTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                }
+                if (outDate) {
+                    const rounded = roundDownTo15Min(outDate);
+                    payOutTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                }
+
+                let duration = '--:--';
+                if (inDate && outDate) {
+                    const hours = Math.floor((outDate - inDate) / (1000 * 3600));
+                    const mins = Math.floor(((outDate - inDate) / (1000 * 60)) % 60);
+                    duration = `${hours}:${String(mins).padStart(2, '0')}`;
+                }
+
+                rows.push([
+                    r.date,
+                    r.empName,
+                    r.empDept,
+                    r.location,
+                    inDate ? `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}` : '--:--',
+                    outDate ? `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}` : '--:--',
+                    payInTime,
+                    payOutTime,
+                    duration
+                ]);
+            });
+
+            const csv = '\uFEFF' + rows.map(r => r.map(cell => `"${cell}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `勤怠記録_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+
+            showToast('CSV をエクスポートしました', 'success');
+        }
+
+        let isSyncing = false;
+        async function syncToExcel() {
+            if (!appState.excelFileId) return;
+            if (isSyncing) return; // Prevent concurrent syncs
+
+            const token = await getAccessToken();
+            if (!token) return;
+
+            isSyncing = true;
+            const syncToast = showToast('同期中...', 'info', 0);
+
+            try {
+                const records = appState.records.map(r => {
+                    const inDate = r.inTs ? new Date(r.inTs) : null;
+                    const outDate = r.outTs ? new Date(r.outTs) : null;
+
+                    let payInTime = '--:--';
+                    let payOutTime = '--:--';
+                    if (inDate) {
+                        const rounded = roundUpTo15Min(inDate);
+                        payInTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                    }
+                    if (outDate) {
+                        const rounded = roundDownTo15Min(outDate);
+                        payOutTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                    }
+
+                    let duration = '--:--';
+                    if (inDate && outDate) {
+                        const hours = Math.floor((outDate - inDate) / (1000 * 3600));
+                        const mins = Math.floor(((outDate - inDate) / (1000 * 60)) % 60);
+                        duration = `${hours}:${String(mins).padStart(2, '0')}`;
+                    }
+
+                    return [
+                        r.date,
+                        r.empName,
+                        r.empDept,
+                        r.location,
+                        inDate ? `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}` : '--:--',
+                        outDate ? `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}` : '--:--',
+                        payInTime,
+                        payOutTime,
+                        duration
+                    ];
+                });
+
+                const values = [
+                    ['日付', '氏名', '部署', '拠点', '出勤打刻', '退勤打刻', '給与用出勤', '給与用退勤', '勤務時間'],
+                    ...records
+                ];
+
+                await writeExcelSheet(appState.excelFileId, '勤怠記録', values);
+
+                appState.lastSyncTime = new Date().toISOString();
+                saveAppState();
+
+                syncToast?.remove();
+                isSyncing = false;
+                showToast('Excel に同期しました', 'success');
+            } catch (err) {
+                syncToast?.remove();
+                isSyncing = false;
+                console.error('Sync error:', err);
+
+                // Show detailed error for debugging
+                let msg = '同期エラー: ';
+                if (err.message === 'Not authenticated') {
+                    msg += '認証切れ。設定から再ログインしてください。';
+                } else if (err.message.includes('403')) {
+                    msg += 'アクセス権限がありません。Azure で Files.ReadWrite 権限を確認してください。';
+                } else if (err.message.includes('400') || err.message.includes('invalidRequest') || err.message.includes('item ID')) {
+                    msg += 'ファイルIDが無効です。設定でファイルを再選択してください。';
+                    // Clear invalid file ID
+                    appState.excelFileId = null;
+                    appState.excelFileName = null;
+                    localStorage.removeItem('kumon_excelFileId');
+                    localStorage.removeItem('kumon_excelFileName');
+                } else if (err.message.includes('404')) {
+                    msg += 'Excel ファイルが見つかりません。設定でファイルを再選択してください。';
+                    appState.excelFileId = null;
+                    appState.excelFileName = null;
+                    localStorage.removeItem('kumon_excelFileId');
+                    localStorage.removeItem('kumon_excelFileName');
+                } else if (err.message.includes('423')) {
+                    msg += 'ファイルがロックされています。Excel が開いている場合は閉じてください。';
+                } else {
+                    msg += err.message.substring(0, 120);
+                }
+                showToast(msg, 'error', 8000);
+            }
+        }
+
+        // ========== STORAGE ==========
+        function saveAppState() {
+            localStorage.setItem('kumon_locations', JSON.stringify(appState.locations));
+            localStorage.setItem('kumon_employees', JSON.stringify(appState.employees));
+            localStorage.setItem('kumon_records', JSON.stringify(appState.records));
+            localStorage.setItem('kumon_currentLocationId', appState.currentLocationId || '');
+            localStorage.setItem('kumon_lastSyncTime', appState.lastSyncTime || '');
+        }
+
+        // Auto-sync every 30 seconds
+        setInterval(() => {
+            if (navigator.onLine && appState.excelFileId) {
+                syncToExcel().catch(err => console.error('Auto-sync failed', err));
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
