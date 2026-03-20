@@ -1635,6 +1635,8 @@
             } else {
                 initMSAL();
                 loadAndRender();
+                // Load data from OneDrive in background
+                syncFromExcel().catch(err => console.log('Initial sync from Excel skipped:', err));
             }
         });
 
@@ -3055,6 +3057,24 @@
 
                 await writeExcelSheet(appState.excelFileId, '勤怠記録', values);
 
+                // Sync employees to Excel
+                const empValues = [
+                    ['ID', '氏名', '部署', 'アバタースタイル', 'アバターシード'],
+                    ...appState.employees.map(e => [
+                        e.id, e.name, e.dept,
+                        e.avatarStyle || 'adventurer',
+                        e.avatarSeed || e.name
+                    ])
+                ];
+                await writeExcelSheet(appState.excelFileId, '従業員', empValues);
+
+                // Sync locations to Excel
+                const locValues = [
+                    ['ID', '拠点名'],
+                    ...appState.locations.map(l => [l.id, l.name])
+                ];
+                await writeExcelSheet(appState.excelFileId, '拠点', locValues);
+
                 appState.lastSyncTime = new Date().toISOString();
                 saveAppState();
 
@@ -3091,6 +3111,78 @@
                     msg += err.message.substring(0, 120);
                 }
                 showToast(msg, 'error', 8000);
+            }
+        }
+
+        // ========== SYNC FROM EXCEL ==========
+        async function syncFromExcel() {
+            if (!appState.excelFileId) return;
+
+            const token = await getAccessToken();
+            if (!token) return;
+
+            try {
+                // Read employees from Excel
+                const empRows = await readExcelSheet(appState.excelFileId, '従業員');
+                if (empRows.length > 1) {
+                    const excelEmps = empRows.slice(1).map(row => ({
+                        id: row[0],
+                        name: row[1],
+                        dept: row[2],
+                        avatarStyle: row[3] || 'adventurer',
+                        avatarSeed: row[4] || row[1],
+                        isIn: false,
+                        checkinTime: null
+                    })).filter(e => e.id && e.name);
+
+                    // Merge: add employees from Excel that don't exist locally
+                    let updated = false;
+                    excelEmps.forEach(excelEmp => {
+                        const existing = appState.employees.find(e => e.id === excelEmp.id);
+                        if (!existing) {
+                            appState.employees.push(excelEmp);
+                            updated = true;
+                        } else {
+                            // Update name/dept if changed
+                            if (existing.name !== excelEmp.name || existing.dept !== excelEmp.dept) {
+                                existing.name = excelEmp.name;
+                                existing.dept = excelEmp.dept;
+                                existing.avatarStyle = excelEmp.avatarStyle;
+                                existing.avatarSeed = excelEmp.avatarSeed;
+                                updated = true;
+                            }
+                        }
+                    });
+
+                    if (updated) {
+                        saveAppState();
+                        loadAndRender();
+                    }
+                }
+
+                // Read locations from Excel
+                const locRows = await readExcelSheet(appState.excelFileId, '拠点');
+                if (locRows.length > 1) {
+                    const excelLocs = locRows.slice(1).map(row => ({
+                        id: row[0],
+                        name: row[1]
+                    })).filter(l => l.id && l.name);
+
+                    let locUpdated = false;
+                    excelLocs.forEach(excelLoc => {
+                        if (!appState.locations.find(l => l.id === excelLoc.id)) {
+                            appState.locations.push(excelLoc);
+                            locUpdated = true;
+                        }
+                    });
+
+                    if (locUpdated) {
+                        saveAppState();
+                        loadAndRender();
+                    }
+                }
+            } catch (err) {
+                console.log('Sync from Excel failed (sheets may not exist yet):', err);
             }
         }
 
