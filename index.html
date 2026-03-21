@@ -3077,12 +3077,15 @@
                         outDate ? `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}` : '--:--',
                         payInTime,
                         payOutTime,
-                        duration
+                        duration,
+                        r.empId || '',
+                        r.inTs || '',
+                        r.outTs || ''
                     ];
                 });
 
                 const values = [
-                    ['日付', '氏名', '部署', '拠点', '出勤打刻', '退勤打刻', '給与用出勤', '給与用退勤', '勤務時間'],
+                    ['日付', '氏名', '部署', '拠点', '出勤打刻', '退勤打刻', '給与用出勤', '給与用退勤', '勤務時間', '従業員ID', '出勤TS', '退勤TS'],
                     ...records
                 ];
 
@@ -3206,7 +3209,7 @@
                 if (recRows.length > 1) {
                     const today = new Date().toISOString().split('T')[0];
                     const excelRecords = recRows.slice(1).map(row => {
-                        // Columns: 日付, 氏名, 部署, 拠点, 出勤打刻, 退勤打刻, 給与用出勤, 給与用退勤, 勤務時間
+                        // Columns: 日付, 氏名, 部署, 拠点, 出勤打刻, 退勤打刻, 給与用出勤, 給与用退勤, 勤務時間, 従業員ID, 出勤TS, 退勤TS
                         const date = row[0];
                         const empName = row[1];
                         const empDept = row[2];
@@ -3214,16 +3217,25 @@
                         const inTime = row[4];
                         const outTime = row[5];
 
-                        // Find employee ID by name
-                        const emp = appState.employees.find(e => e.name === empName);
-                        const empId = emp ? emp.id : 'unknown';
+                        // Use raw TS columns if available (cols 10, 11), else reconstruct
+                        const rawEmpId = row[9] || '';
+                        const rawInTs = row[10] || '';
+                        const rawOutTs = row[11] || '';
 
-                        // Reconstruct ISO timestamps from date + time
-                        let inTs = null, outTs = null;
-                        if (inTime && inTime !== '--:--') {
+                        // Employee ID: use raw column or find by name
+                        let empId = rawEmpId;
+                        if (!empId) {
+                            const emp = appState.employees.find(e => e.name === empName);
+                            empId = emp ? emp.id : 'unknown';
+                        }
+
+                        // Timestamps: use raw ISO or reconstruct from HH:MM
+                        let inTs = rawInTs || null;
+                        let outTs = rawOutTs || null;
+                        if (!inTs && inTime && inTime !== '--:--') {
                             inTs = `${date}T${inTime}:00`;
                         }
-                        if (outTime && outTime !== '--:--') {
+                        if (!outTs && outTime && outTime !== '--:--') {
                             outTs = `${date}T${outTime}:00`;
                         }
 
@@ -3269,10 +3281,12 @@
             localStorage.setItem('kumon_lastSyncTime', appState.lastSyncTime || '');
         }
 
-        // Auto-sync every 30 seconds
+        // Auto-sync every 30 seconds: push local changes, then pull remote changes
         setInterval(() => {
             if (navigator.onLine && appState.excelFileId) {
-                syncToExcel().catch(err => console.error('Auto-sync failed', err));
+                syncToExcel()
+                    .then(() => syncFromExcel())
+                    .catch(err => console.error('Auto-sync failed', err));
             }
         }, 30000);
     </script>
