@@ -2380,62 +2380,105 @@
 
             const now = new Date();
             const ts = now.toISOString();
-            const displayTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-            if (type === 'in') {
-                emp.isIn = true;
-                emp.checkinTime = ts;
-                showToast(`${emp.name} が出勤しました`, 'success');
-            } else {
-                emp.isIn = false;
-                showToast(`${emp.name} が退勤しました`, 'success');
-            }
-
             const locId = appState.currentLocationId;
             const loc = appState.locations.find(l => l.id === locId);
 
-            if (type === 'in') {
-                // Always create a new record for each check-in
-                const record = {
-                    date: now.toISOString().split('T')[0],
-                    empId: emp.id,
-                    empName: emp.name,
-                    empDept: emp.dept,
-                    location: loc?.name || '未設定',
-                    inTs: ts,
-                    outTs: null
-                };
-                appState.records.push(record);
-            } else {
-                // Find the most recent open record (has inTs but no outTs) for this employee
-                const openRecord = [...appState.records]
-                    .reverse()
-                    .find(r => r.empId === emp.id && r.inTs && !r.outTs);
+            // Create event record (each check-in and check-out is a separate event)
+            const event = {
+                ts: ts,
+                date: now.toISOString().split('T')[0],
+                empId: emp.id,
+                empName: emp.name,
+                empDept: emp.dept,
+                location: loc?.name || '未設定',
+                type: type  // 'in' or 'out'
+            };
+            appState.records.push(event);
 
-                if (openRecord) {
-                    openRecord.outTs = ts;
-                } else {
-                    // No open record found - create a standalone out record
-                    const record = {
-                        date: now.toISOString().split('T')[0],
-                        empId: emp.id,
-                        empName: emp.name,
-                        empDept: emp.dept,
-                        location: loc?.name || '未設定',
-                        inTs: null,
-                        outTs: ts
-                    };
-                    appState.records.push(record);
-                }
+            if (type === 'in') {
+                showToast(`${emp.name} が出勤しました`, 'success');
+            } else {
+                showToast(`${emp.name} が退勤しました`, 'success');
             }
 
             saveAppState();
             loadAndRender();
 
-            // Sync in background - don't block UI on failure
+            // Sync in background
             if (appState.excelFileId && navigator.onLine) {
                 syncToExcel().catch(err => console.error('Background sync failed', err));
             }
+        }
+
+        // Get employee's current status from event records
+        function getEmpStatus(empId) {
+            const today = new Date().toISOString().split('T')[0];
+            const todayEvents = appState.records
+                .filter(r => r.empId === empId && r.date === today)
+                .sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+            if (todayEvents.length === 0) {
+                return { isIn: false, lastEvent: null, firstIn: null, lastOut: null };
+            }
+
+            const lastEvent = todayEvents[todayEvents.length - 1];
+            const isIn = lastEvent.type === 'in';
+            const firstIn = todayEvents.find(e => e.type === 'in');
+            const lastOut = [...todayEvents].reverse().find(e => e.type === 'out');
+
+            return { isIn, lastEvent, firstIn, lastOut, todayEvents };
+        }
+
+        // Build paired records (in/out pairs) from events for display/export
+        function buildPairedRecords(events) {
+            const pairs = [];
+            // Group by empId + date
+            const grouped = {};
+            events.forEach(e => {
+                const key = `${e.empId}_${e.date}`;
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push(e);
+            });
+
+            Object.values(grouped).forEach(dayEvents => {
+                dayEvents.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+                let i = 0;
+                while (i < dayEvents.length) {
+                    const ev = dayEvents[i];
+                    if (ev.type === 'in') {
+                        // Look for matching 'out'
+                        const outEv = dayEvents.slice(i + 1).find(e => e.type === 'out');
+                        pairs.push({
+                            date: ev.date,
+                            empId: ev.empId,
+                            empName: ev.empName,
+                            empDept: ev.empDept,
+                            location: ev.location,
+                            inTs: ev.ts,
+                            outTs: outEv ? outEv.ts : null
+                        });
+                        if (outEv) {
+                            // Skip past the matched out event
+                            i = dayEvents.indexOf(outEv) + 1;
+                        } else {
+                            i++;
+                        }
+                    } else {
+                        // Standalone out (no matching in)
+                        pairs.push({
+                            date: ev.date,
+                            empId: ev.empId,
+                            empName: ev.empName,
+                            empDept: ev.empDept,
+                            location: ev.location,
+                            inTs: null,
+                            outTs: ev.ts
+                        });
+                        i++;
+                    }
+                }
+            });
+            return pairs;
         }
 
         // ========== ATTENDANCE ROUNDING ==========
@@ -2470,22 +2513,16 @@
 
             // Show all employees regardless of location
             appState.employees.forEach(emp => {
+                const status = getEmpStatus(emp.id);
                 const div = document.createElement('div');
                 div.className = 'employee-item' + (emp.id === appState.selectedEmployeeId ? ' selected' : '');
-                let avatarHtml = '';
-                if (emp.emoji) {
-                    // Backward compatibility: show emoji if it exists
-                    avatarHtml = `<div class="emp-avatar">${emp.emoji}</div>`;
-                } else {
-                    // Use avatar image
-                    const seed = emp.avatarSeed || emp.name;
-                    const style = emp.avatarStyle || 'adventurer';
-                    avatarHtml = `<div class="emp-avatar"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
-                }
+                const seed = emp.avatarSeed || emp.name;
+                const style = emp.avatarStyle || 'adventurer';
+                const avatarHtml = `<div class="emp-avatar"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
                 div.innerHTML = `
                     ${avatarHtml}
                     <div class="emp-name">${emp.name}</div>
-                    <div class="emp-status ${emp.isIn ? 'in' : 'out'}">${emp.isIn ? '出勤中' : '退勤済'}</div>
+                    <div class="emp-status ${status.isIn ? 'in' : 'out'}">${status.isIn ? '出勤中' : '退勤済'}</div>
                 `;
                 div.addEventListener('click', () => selectEmployee(emp.id));
                 grid.appendChild(div);
@@ -2502,30 +2539,23 @@
             const info = document.getElementById('selectedInfo');
             info.classList.add('active');
             const avatarEl = document.getElementById('selectedAvatar');
-            if (emp.emoji) {
-                // Backward compatibility
-                avatarEl.innerHTML = emp.emoji;
-            } else {
-                // Use avatar image
-                const seed = emp.avatarSeed || emp.name;
-                const style = emp.avatarStyle || 'adventurer';
-                avatarEl.innerHTML = `<img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
-            }
+            const seed = emp.avatarSeed || emp.name;
+            const style = emp.avatarStyle || 'adventurer';
+            avatarEl.innerHTML = `<img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
             document.getElementById('selectedName').textContent = emp.name;
             document.getElementById('selectedDept').textContent = emp.dept;
 
-            const today = new Date().toISOString().split('T')[0];
-            const record = appState.records.find(r => r.empId === empId && r.date === today);
+            const status = getEmpStatus(empId);
 
-            if (record?.inTs) {
-                const inDate = new Date(record.inTs);
+            if (status.firstIn) {
+                const inDate = new Date(status.firstIn.ts);
                 document.getElementById('todayCheckIn').textContent = `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}`;
             } else {
                 document.getElementById('todayCheckIn').textContent = '--:--';
             }
 
-            if (record?.outTs) {
-                const outDate = new Date(record.outTs);
+            if (status.lastOut) {
+                const outDate = new Date(status.lastOut.ts);
                 document.getElementById('todayCheckOut').textContent = `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}`;
             } else {
                 document.getElementById('todayCheckOut').textContent = '--:--';
@@ -2534,12 +2564,12 @@
 
         function updateDashboardStats() {
             const today = new Date().toISOString().split('T')[0];
-            const todayRecords = appState.records.filter(r => r.date === today);
+            const todayEvents = appState.records.filter(r => r.date === today);
 
-            const checkIn = appState.employees.filter(e => e.isIn).length;
+            const checkIn = appState.employees.filter(e => getEmpStatus(e.id).isIn).length;
 
             document.getElementById('statCheckIn').textContent = checkIn;
-            document.getElementById('statStamps').textContent = todayRecords.length;
+            document.getElementById('statStamps').textContent = todayEvents.length;
         }
 
         function renderEmployeeGrid() {
@@ -2599,33 +2629,19 @@
 
         function updateActivityFeed() {
             const today = new Date().toISOString().split('T')[0];
-            const todayRecords = appState.records.filter(r => r.date === today);
+            const todayEvents = appState.records.filter(r => r.date === today);
             const feed = document.getElementById('activityFeed');
 
-            if (todayRecords.length === 0) {
+            if (todayEvents.length === 0) {
                 feed.innerHTML = '<div class="feed-empty">本日の打刻はまだありません</div>';
                 return;
             }
 
-            const items = [];
-            todayRecords.forEach(r => {
-                if (r.inTs) {
-                    const date = new Date(r.inTs);
-                    items.push({
-                        ts: date,
-                        text: `${r.empName} が出勤しました`,
-                        emoji: '📍'
-                    });
-                }
-                if (r.outTs) {
-                    const date = new Date(r.outTs);
-                    items.push({
-                        ts: date,
-                        text: `${r.empName} が退勤しました`,
-                        emoji: '🚪'
-                    });
-                }
-            });
+            const items = todayEvents.map(r => ({
+                ts: new Date(r.ts),
+                text: `${r.empName} が${r.type === 'in' ? '出勤' : '退勤'}しました`,
+                emoji: r.type === 'in' ? '📍' : '🚪'
+            }));
 
             items.sort((a, b) => b.ts - a.ts);
 
@@ -2650,7 +2666,7 @@
 
         function renderCurrentlyWorking() {
             const container = document.getElementById('currentlyWorking');
-            const checkedInEmps = appState.employees.filter(e => e.isIn);
+            const checkedInEmps = appState.employees.filter(e => getEmpStatus(e.id).isIn);
 
             if (checkedInEmps.length === 0) {
                 container.innerHTML = '<div style="text-align: center; color: var(--ink2); padding: 20px;">出勤している従業員はいません</div>';
@@ -2658,14 +2674,17 @@
             }
 
             container.innerHTML = checkedInEmps.map(emp => {
-                const today = new Date().toISOString().split('T')[0];
-                const record = appState.records.find(r => r.empId === emp.id && r.date === today);
-
+                const status = getEmpStatus(emp.id);
                 let checkinDisplay = '--:--';
                 let durationDisplay = '0分';
+                let location = '未設定';
 
-                if (record?.inTs) {
-                    const inDate = new Date(record.inTs);
+                if (status.lastEvent) {
+                    location = status.lastEvent.location || '未設定';
+                }
+
+                if (status.firstIn) {
+                    const inDate = new Date(status.firstIn.ts);
                     checkinDisplay = `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}`;
 
                     const now = new Date();
@@ -2680,23 +2699,16 @@
                     }
                 }
 
-                let avatarHtml = '';
-                if (emp.emoji) {
-                    // Backward compatibility: show emoji if it exists
-                    avatarHtml = `<div class="currently-working-emoji">${emp.emoji}</div>`;
-                } else {
-                    // Use avatar image
-                    const seed = emp.avatarSeed || emp.name;
-                    const style = emp.avatarStyle || 'adventurer';
-                    avatarHtml = `<div class="currently-working-emoji"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
-                }
+                const seed = emp.avatarSeed || emp.name;
+                const style = emp.avatarStyle || 'adventurer';
+                const avatarHtml = `<div class="currently-working-emoji"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
 
                 return `
                     <div class="currently-working-item">
                         ${avatarHtml}
                         <div class="currently-working-info">
                             <div class="currently-working-name">${emp.name}</div>
-                            <div class="currently-working-dept">${emp.dept} · ${record?.location || '未設定'}</div>
+                            <div class="currently-working-dept">${emp.dept} · ${location}</div>
                             <div class="currently-working-time">出勤: ${checkinDisplay} (${durationDisplay})</div>
                         </div>
                     </div>
@@ -2710,10 +2722,7 @@
             const year = now.getFullYear();
             const month = now.getMonth();
 
-            // Get days in month
             const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-            // Get all employees
             const employees = appState.employees;
 
             if (employees.length === 0) {
@@ -2721,26 +2730,22 @@
                 return;
             }
 
-            // Build month data: map of empId -> day -> hours
+            // Build paired records from events, then calculate hours
+            const pairs = buildPairedRecords(appState.records);
             const monthData = {};
-            employees.forEach(emp => {
-                monthData[emp.id] = {};
-            });
+            employees.forEach(emp => { monthData[emp.id] = {}; });
 
-            const monthStart = new Date(year, month, 1);
-            appState.records.forEach(r => {
+            pairs.forEach(r => {
                 const rDate = new Date(r.date);
-                if (rDate >= monthStart && rDate.getMonth() === month && rDate.getFullYear() === year) {
+                if (rDate.getMonth() === month && rDate.getFullYear() === year) {
                     if (!monthData[r.empId]) monthData[r.empId] = {};
 
                     let hours = 0;
                     if (r.inTs && r.outTs) {
-                        const inDate = new Date(r.inTs);
-                        const outDate = new Date(r.outTs);
-                        hours = (outDate - inDate) / (1000 * 3600);
+                        hours = (new Date(r.outTs) - new Date(r.inTs)) / (1000 * 3600);
                     }
 
-                    const day = new Date(r.date).getDate();
+                    const day = rDate.getDate();
                     monthData[r.empId][day] = (monthData[r.empId][day] || 0) + hours;
                 }
             });
@@ -2781,14 +2786,14 @@
             const filterEmp = document.getElementById('recordsFilterEmp').value;
             const filterLoc = document.getElementById('recordsFilterLoc').value;
 
-            let filtered = appState.records;
-            if (filterEmp) filtered = filtered.filter(r => r.empId === filterEmp);
-            if (filterLoc) filtered = filtered.filter(r => r.location === filterLoc);
+            let pairs = buildPairedRecords(appState.records);
+            if (filterEmp) pairs = pairs.filter(r => r.empId === filterEmp);
+            if (filterLoc) pairs = pairs.filter(r => r.location === filterLoc);
 
             const tbody = document.getElementById('recordsTableBody');
             tbody.innerHTML = '';
 
-            filtered.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(r => {
+            pairs.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(r => {
                 const inDate = r.inTs ? new Date(r.inTs) : null;
                 const outDate = r.outTs ? new Date(r.outTs) : null;
 
@@ -2981,15 +2986,15 @@
             const filterEmp = document.getElementById('recordsFilterEmp').value;
             const filterLoc = document.getElementById('recordsFilterLoc').value;
 
-            let filtered = appState.records;
-            if (filterEmp) filtered = filtered.filter(r => r.empId === filterEmp);
-            if (filterLoc) filtered = filtered.filter(r => r.location === filterLoc);
+            let pairs = buildPairedRecords(appState.records);
+            if (filterEmp) pairs = pairs.filter(r => r.empId === filterEmp);
+            if (filterLoc) pairs = pairs.filter(r => r.location === filterLoc);
 
             const rows = [
                 ['日付', '氏名', '部署', '拠点', '出勤打刻', '退勤打刻', '給与用出勤', '給与用退勤', '勤務時間']
             ];
 
-            filtered.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(r => {
+            pairs.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(r => {
                 const inDate = r.inTs ? new Date(r.inTs) : null;
                 const outDate = r.outTs ? new Date(r.outTs) : null;
 
@@ -3034,146 +3039,44 @@
             showToast('CSV をエクスポートしました', 'success');
         }
 
-        // ========== BIDIRECTIONAL SYNC ==========
+        // ========== EVENT-BASED SYNC ==========
         let isSyncing = false;
 
-        // Parse Excel record rows into app record objects
-        function parseExcelRecords(rows) {
-            return rows.slice(1).map(row => {
-                const date = row[0];
-                const empName = row[1];
-                const empDept = row[2];
-                const location = row[3];
-                const inTime = row[4];
-                const outTime = row[5];
-                const rawEmpId = row[9] || '';
-                const rawInTs = row[10] || '';
-                const rawOutTs = row[11] || '';
-
-                let empId = rawEmpId;
-                if (!empId) {
-                    const emp = appState.employees.find(e => e.name === empName);
-                    empId = emp ? emp.id : 'unknown';
-                }
-
-                let inTs = rawInTs || null;
-                let outTs = rawOutTs || null;
-                if (!inTs && inTime && inTime !== '--:--') {
-                    inTs = `${date}T${inTime}:00`;
-                }
-                if (!outTs && outTime && outTime !== '--:--') {
-                    outTs = `${date}T${outTime}:00`;
-                }
-
-                return { date, empId, empName, empDept, location, inTs, outTs };
-            }).filter(r => r.date && r.empName);
+        // Parse Excel event rows into event objects
+        function parseExcelEvents(rows) {
+            return rows.slice(1).map(row => ({
+                ts: row[0] || '',
+                date: row[1] || '',
+                empId: row[2] || '',
+                empName: row[3] || '',
+                empDept: row[4] || '',
+                location: row[5] || '',
+                type: row[6] || ''
+            })).filter(e => e.ts && e.empId && (e.type === 'in' || e.type === 'out'));
         }
 
-        // Merge local and remote records (deduplicate by empId+inTs)
-        function mergeRecords(localRecords, remoteRecords) {
-            const mergedMap = new Map();
-            // Remote records first (base)
-            remoteRecords.forEach(r => {
-                const key = `${r.empId}_${r.inTs}`;
-                mergedMap.set(key, { ...r });
-            });
-            // Local records: add new ones, update outTs if local has newer info
-            localRecords.forEach(r => {
-                const key = `${r.empId}_${r.inTs}`;
-                const existing = mergedMap.get(key);
-                if (!existing) {
-                    // Local-only record — add it
-                    mergedMap.set(key, r);
-                } else {
-                    // Both exist — take the one with more info
-                    if (r.outTs && !existing.outTs) {
-                        existing.outTs = r.outTs;
-                    } else if (!r.outTs && existing.outTs) {
-                        // Remote has checkout, keep it
-                    }
-                }
-            });
-            return Array.from(mergedMap.values());
+        // Merge local and Excel events (deduplicate by empId+ts)
+        function mergeEvents(localEvents, excelEvents) {
+            const map = new Map();
+            excelEvents.forEach(e => map.set(`${e.empId}_${e.ts}`, e));
+            localEvents.forEach(e => map.set(`${e.empId}_${e.ts}`, e));
+            return Array.from(map.values())
+                .sort((a, b) => new Date(a.ts) - new Date(b.ts));
         }
 
-        // Merge employee lists (Excel = master for metadata, preserve/compute isIn from records)
-        function mergeEmployees(localEmps, excelEmps, mergedRecords) {
-            const today = new Date().toISOString().split('T')[0];
-            const localStateMap = {};
-            localEmps.forEach(e => {
-                localStateMap[e.id] = { isIn: e.isIn, checkinTime: e.checkinTime };
-            });
-
-            // Build set of IDs from Excel
+        // Merge employee lists
+        function mergeEmployees(localEmps, excelEmps) {
             const excelIdSet = new Set(excelEmps.map(e => e.id));
-
-            // Start with Excel employees
-            const result = excelEmps.map(ee => {
-                // Check merged records for open check-in today
-                const openRecord = mergedRecords.find(
-                    r => r.empId === ee.id && r.date === today && r.inTs && !r.outTs
-                );
-                const local = localStateMap[ee.id];
-
-                return {
-                    ...ee,
-                    isIn: openRecord ? true : (local ? local.isIn : false),
-                    checkinTime: openRecord ? openRecord.inTs : (local ? local.checkinTime : null)
-                };
-            });
-
-            // Add local-only employees (not yet in Excel)
+            const result = excelEmps.map(ee => ({
+                ...ee, isIn: false, checkinTime: null
+            }));
             localEmps.forEach(le => {
-                if (!excelIdSet.has(le.id)) {
-                    result.push(le);
-                }
+                if (!excelIdSet.has(le.id)) result.push(le);
             });
-
             return result;
         }
 
-        // Format records for Excel output
-        function formatRecordsForExcel(records) {
-            return records.map(r => {
-                const inDate = r.inTs ? new Date(r.inTs) : null;
-                const outDate = r.outTs ? new Date(r.outTs) : null;
-
-                let payInTime = '--:--';
-                let payOutTime = '--:--';
-                if (inDate) {
-                    const rounded = roundUpTo15Min(inDate);
-                    payInTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
-                }
-                if (outDate) {
-                    const rounded = roundDownTo15Min(outDate);
-                    payOutTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
-                }
-
-                let duration = '--:--';
-                if (inDate && outDate) {
-                    const hours = Math.floor((outDate - inDate) / (1000 * 3600));
-                    const mins = Math.floor(((outDate - inDate) / (1000 * 60)) % 60);
-                    duration = `${hours}:${String(mins).padStart(2, '0')}`;
-                }
-
-                return [
-                    r.date,
-                    r.empName,
-                    r.empDept,
-                    r.location,
-                    inDate ? `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}` : '--:--',
-                    outDate ? `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}` : '--:--',
-                    payInTime,
-                    payOutTime,
-                    duration,
-                    r.empId || '',
-                    r.inTs || '',
-                    r.outTs || ''
-                ];
-            });
-        }
-
-        // Main sync function: READ from Excel → MERGE → WRITE back
+        // Main sync: READ from Excel → MERGE → WRITE back
         async function syncToExcel() {
             if (!appState.excelFileId) return;
             if (isSyncing) return;
@@ -3188,7 +3091,7 @@
                 // ===== STEP 1: READ from Excel =====
                 let excelEmps = [];
                 let excelLocs = [];
-                let excelRecords = [];
+                let excelEvents = [];
 
                 try {
                     const empRows = await readExcelSheet(appState.excelFileId, '従業員');
@@ -3213,42 +3116,44 @@
                 try {
                     const recRows = await readExcelSheet(appState.excelFileId, '勤怠記録');
                     if (recRows.length > 1) {
-                        excelRecords = parseExcelRecords(recRows);
+                        excelEvents = parseExcelEvents(recRows);
                     }
                 } catch (e) { console.log('Read records sheet:', e.message); }
 
-                // ===== STEP 2: MERGE local + Excel =====
-                const mergedRecords = mergeRecords(appState.records, excelRecords);
+                // ===== STEP 2: MERGE =====
+                const mergedEvents = mergeEvents(appState.records, excelEvents);
 
                 const mergedEmps = excelEmps.length > 0
-                    ? mergeEmployees(appState.employees, excelEmps, mergedRecords)
-                    : appState.employees;
+                    ? mergeEmployees(appState.employees, excelEmps)
+                    : [...appState.employees];
 
-                const mergedLocs = excelLocs.length > 0
-                    ? (() => {
-                        const excelLocIds = new Set(excelLocs.map(l => l.id));
-                        const result = [...excelLocs];
-                        appState.locations.forEach(ll => {
-                            if (!excelLocIds.has(ll.id)) result.push(ll);
-                        });
-                        return result;
-                    })()
-                    : appState.locations;
+                const mergedLocs = (() => {
+                    if (excelLocs.length === 0) return [...appState.locations];
+                    const excelLocIds = new Set(excelLocs.map(l => l.id));
+                    const result = [...excelLocs];
+                    appState.locations.forEach(ll => {
+                        if (!excelLocIds.has(ll.id)) result.push(ll);
+                    });
+                    return result;
+                })();
 
-                // ===== STEP 3: Update local state with merged data =====
-                appState.records = mergedRecords;
+                // ===== STEP 3: Update local state =====
+                appState.records = mergedEvents;
                 appState.employees = mergedEmps;
                 appState.locations = mergedLocs;
                 if (!appState.locations.find(l => l.id === appState.currentLocationId)) {
                     appState.currentLocationId = appState.locations[0]?.id || null;
                 }
 
-                // ===== STEP 4: WRITE merged data back to Excel =====
-                const recValues = [
-                    ['日付', '氏名', '部署', '拠点', '出勤打刻', '退勤打刻', '給与用出勤', '給与用退勤', '勤務時間', '従業員ID', '出勤TS', '退勤TS'],
-                    ...formatRecordsForExcel(mergedRecords)
+                // ===== STEP 4: WRITE merged data to Excel =====
+                // Events sheet (simple append-friendly format)
+                const eventValues = [
+                    ['タイムスタンプ', '日付', '従業員ID', '氏名', '部署', '拠点', '種別'],
+                    ...mergedEvents.map(e => [
+                        e.ts, e.date, e.empId, e.empName, e.empDept, e.location, e.type
+                    ])
                 ];
-                await writeExcelSheet(appState.excelFileId, '勤怠記録', recValues);
+                await writeExcelSheet(appState.excelFileId, '勤怠記録', eventValues);
 
                 const empValues = [
                     ['ID', '氏名', '部署', 'アバタースタイル', 'アバターシード'],
@@ -3306,7 +3211,7 @@
             }
         }
 
-        // syncFromExcel is now just an alias — syncToExcel does read+merge+write
+        // syncFromExcel is alias — syncToExcel does read+merge+write
         async function syncFromExcel() {
             return syncToExcel();
         }
