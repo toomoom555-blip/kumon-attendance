@@ -2326,6 +2326,11 @@
                 loadAndRender();
                 showToast(`${name} を追加しました`, 'success');
             }
+
+            // Sync employees to OneDrive
+            if (appState.excelFileId && navigator.onLine) {
+                syncToExcel().catch(err => console.error('Employee sync failed', err));
+            }
         }
 
         function editEmployee(empId) {
@@ -2571,6 +2576,10 @@
                 saveAppState();
                 renderEmployeeGrid();
                 showToast(`${emp.name} を削除しました`, 'success');
+                // Sync to OneDrive
+                if (appState.excelFileId && navigator.onLine) {
+                    syncToExcel().catch(err => console.error('Delete sync failed', err));
+                }
             }
         }
 
@@ -2883,6 +2892,10 @@
                 renderSettings();
                 updateLocationBadge();
                 showToast(`${loc.name} を削除しました`, 'success');
+                // Sync to OneDrive
+                if (appState.excelFileId && navigator.onLine) {
+                    syncToExcel().catch(err => console.error('Location delete sync failed', err));
+                }
             }
         }
 
@@ -2909,6 +2922,10 @@
             input.value = '';
             renderSettings();
             showToast(`${name} を追加しました`, 'success');
+            // Sync to OneDrive
+            if (appState.excelFileId && navigator.onLine) {
+                syncToExcel().catch(err => console.error('Location add sync failed', err));
+            }
         }
 
         function selectExcelFile() {
