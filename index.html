@@ -3034,10 +3034,149 @@
             showToast('CSV をエクスポートしました', 'success');
         }
 
+        // ========== BIDIRECTIONAL SYNC ==========
         let isSyncing = false;
+
+        // Parse Excel record rows into app record objects
+        function parseExcelRecords(rows) {
+            return rows.slice(1).map(row => {
+                const date = row[0];
+                const empName = row[1];
+                const empDept = row[2];
+                const location = row[3];
+                const inTime = row[4];
+                const outTime = row[5];
+                const rawEmpId = row[9] || '';
+                const rawInTs = row[10] || '';
+                const rawOutTs = row[11] || '';
+
+                let empId = rawEmpId;
+                if (!empId) {
+                    const emp = appState.employees.find(e => e.name === empName);
+                    empId = emp ? emp.id : 'unknown';
+                }
+
+                let inTs = rawInTs || null;
+                let outTs = rawOutTs || null;
+                if (!inTs && inTime && inTime !== '--:--') {
+                    inTs = `${date}T${inTime}:00`;
+                }
+                if (!outTs && outTime && outTime !== '--:--') {
+                    outTs = `${date}T${outTime}:00`;
+                }
+
+                return { date, empId, empName, empDept, location, inTs, outTs };
+            }).filter(r => r.date && r.empName);
+        }
+
+        // Merge local and remote records (deduplicate by empId+inTs)
+        function mergeRecords(localRecords, remoteRecords) {
+            const mergedMap = new Map();
+            // Remote records first (base)
+            remoteRecords.forEach(r => {
+                const key = `${r.empId}_${r.inTs}`;
+                mergedMap.set(key, { ...r });
+            });
+            // Local records: add new ones, update outTs if local has newer info
+            localRecords.forEach(r => {
+                const key = `${r.empId}_${r.inTs}`;
+                const existing = mergedMap.get(key);
+                if (!existing) {
+                    // Local-only record — add it
+                    mergedMap.set(key, r);
+                } else {
+                    // Both exist — take the one with more info
+                    if (r.outTs && !existing.outTs) {
+                        existing.outTs = r.outTs;
+                    } else if (!r.outTs && existing.outTs) {
+                        // Remote has checkout, keep it
+                    }
+                }
+            });
+            return Array.from(mergedMap.values());
+        }
+
+        // Merge employee lists (Excel = master for metadata, preserve/compute isIn from records)
+        function mergeEmployees(localEmps, excelEmps, mergedRecords) {
+            const today = new Date().toISOString().split('T')[0];
+            const localStateMap = {};
+            localEmps.forEach(e => {
+                localStateMap[e.id] = { isIn: e.isIn, checkinTime: e.checkinTime };
+            });
+
+            // Build set of IDs from Excel
+            const excelIdSet = new Set(excelEmps.map(e => e.id));
+
+            // Start with Excel employees
+            const result = excelEmps.map(ee => {
+                // Check merged records for open check-in today
+                const openRecord = mergedRecords.find(
+                    r => r.empId === ee.id && r.date === today && r.inTs && !r.outTs
+                );
+                const local = localStateMap[ee.id];
+
+                return {
+                    ...ee,
+                    isIn: openRecord ? true : (local ? local.isIn : false),
+                    checkinTime: openRecord ? openRecord.inTs : (local ? local.checkinTime : null)
+                };
+            });
+
+            // Add local-only employees (not yet in Excel)
+            localEmps.forEach(le => {
+                if (!excelIdSet.has(le.id)) {
+                    result.push(le);
+                }
+            });
+
+            return result;
+        }
+
+        // Format records for Excel output
+        function formatRecordsForExcel(records) {
+            return records.map(r => {
+                const inDate = r.inTs ? new Date(r.inTs) : null;
+                const outDate = r.outTs ? new Date(r.outTs) : null;
+
+                let payInTime = '--:--';
+                let payOutTime = '--:--';
+                if (inDate) {
+                    const rounded = roundUpTo15Min(inDate);
+                    payInTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                }
+                if (outDate) {
+                    const rounded = roundDownTo15Min(outDate);
+                    payOutTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                }
+
+                let duration = '--:--';
+                if (inDate && outDate) {
+                    const hours = Math.floor((outDate - inDate) / (1000 * 3600));
+                    const mins = Math.floor(((outDate - inDate) / (1000 * 60)) % 60);
+                    duration = `${hours}:${String(mins).padStart(2, '0')}`;
+                }
+
+                return [
+                    r.date,
+                    r.empName,
+                    r.empDept,
+                    r.location,
+                    inDate ? `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}` : '--:--',
+                    outDate ? `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}` : '--:--',
+                    payInTime,
+                    payOutTime,
+                    duration,
+                    r.empId || '',
+                    r.inTs || '',
+                    r.outTs || ''
+                ];
+            });
+        }
+
+        // Main sync function: READ from Excel → MERGE → WRITE back
         async function syncToExcel() {
             if (!appState.excelFileId) return;
-            if (isSyncing) return; // Prevent concurrent syncs
+            if (isSyncing) return;
 
             const token = await getAccessToken();
             if (!token) return;
@@ -3046,55 +3185,74 @@
             const syncToast = showToast('同期中...', 'info', 0);
 
             try {
-                const records = appState.records.map(r => {
-                    const inDate = r.inTs ? new Date(r.inTs) : null;
-                    const outDate = r.outTs ? new Date(r.outTs) : null;
+                // ===== STEP 1: READ from Excel =====
+                let excelEmps = [];
+                let excelLocs = [];
+                let excelRecords = [];
 
-                    let payInTime = '--:--';
-                    let payOutTime = '--:--';
-                    if (inDate) {
-                        const rounded = roundUpTo15Min(inDate);
-                        payInTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                try {
+                    const empRows = await readExcelSheet(appState.excelFileId, '従業員');
+                    if (empRows.length > 1) {
+                        excelEmps = empRows.slice(1).map(row => ({
+                            id: row[0], name: row[1], dept: row[2],
+                            avatarStyle: row[3] || 'adventurer',
+                            avatarSeed: row[4] || row[1]
+                        })).filter(e => e.id && e.name);
                     }
-                    if (outDate) {
-                        const rounded = roundDownTo15Min(outDate);
-                        payOutTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                } catch (e) { console.log('Read employees sheet:', e.message); }
+
+                try {
+                    const locRows = await readExcelSheet(appState.excelFileId, '拠点');
+                    if (locRows.length > 1) {
+                        excelLocs = locRows.slice(1).map(row => ({
+                            id: row[0], name: row[1]
+                        })).filter(l => l.id && l.name);
                     }
+                } catch (e) { console.log('Read locations sheet:', e.message); }
 
-                    let duration = '--:--';
-                    if (inDate && outDate) {
-                        const hours = Math.floor((outDate - inDate) / (1000 * 3600));
-                        const mins = Math.floor(((outDate - inDate) / (1000 * 60)) % 60);
-                        duration = `${hours}:${String(mins).padStart(2, '0')}`;
+                try {
+                    const recRows = await readExcelSheet(appState.excelFileId, '勤怠記録');
+                    if (recRows.length > 1) {
+                        excelRecords = parseExcelRecords(recRows);
                     }
+                } catch (e) { console.log('Read records sheet:', e.message); }
 
-                    return [
-                        r.date,
-                        r.empName,
-                        r.empDept,
-                        r.location,
-                        inDate ? `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}` : '--:--',
-                        outDate ? `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}` : '--:--',
-                        payInTime,
-                        payOutTime,
-                        duration,
-                        r.empId || '',
-                        r.inTs || '',
-                        r.outTs || ''
-                    ];
-                });
+                // ===== STEP 2: MERGE local + Excel =====
+                const mergedRecords = mergeRecords(appState.records, excelRecords);
 
-                const values = [
+                const mergedEmps = excelEmps.length > 0
+                    ? mergeEmployees(appState.employees, excelEmps, mergedRecords)
+                    : appState.employees;
+
+                const mergedLocs = excelLocs.length > 0
+                    ? (() => {
+                        const excelLocIds = new Set(excelLocs.map(l => l.id));
+                        const result = [...excelLocs];
+                        appState.locations.forEach(ll => {
+                            if (!excelLocIds.has(ll.id)) result.push(ll);
+                        });
+                        return result;
+                    })()
+                    : appState.locations;
+
+                // ===== STEP 3: Update local state with merged data =====
+                appState.records = mergedRecords;
+                appState.employees = mergedEmps;
+                appState.locations = mergedLocs;
+                if (!appState.locations.find(l => l.id === appState.currentLocationId)) {
+                    appState.currentLocationId = appState.locations[0]?.id || null;
+                }
+
+                // ===== STEP 4: WRITE merged data back to Excel =====
+                const recValues = [
                     ['日付', '氏名', '部署', '拠点', '出勤打刻', '退勤打刻', '給与用出勤', '給与用退勤', '勤務時間', '従業員ID', '出勤TS', '退勤TS'],
-                    ...records
+                    ...formatRecordsForExcel(mergedRecords)
                 ];
+                await writeExcelSheet(appState.excelFileId, '勤怠記録', recValues);
 
-                await writeExcelSheet(appState.excelFileId, '勤怠記録', values);
-
-                // Sync employees to Excel
                 const empValues = [
                     ['ID', '氏名', '部署', 'アバタースタイル', 'アバターシード'],
-                    ...appState.employees.map(e => [
+                    ...mergedEmps.map(e => [
                         e.id, e.name, e.dept,
                         e.avatarStyle || 'adventurer',
                         e.avatarSeed || e.name
@@ -3102,25 +3260,26 @@
                 ];
                 await writeExcelSheet(appState.excelFileId, '従業員', empValues);
 
-                // Sync locations to Excel
                 const locValues = [
                     ['ID', '拠点名'],
-                    ...appState.locations.map(l => [l.id, l.name])
+                    ...mergedLocs.map(l => [l.id, l.name])
                 ];
                 await writeExcelSheet(appState.excelFileId, '拠点', locValues);
 
+                // ===== STEP 5: Save & render =====
                 appState.lastSyncTime = new Date().toISOString();
                 saveAppState();
+                loadAndRender();
+                updateLocationBadge();
 
                 syncToast?.remove();
                 isSyncing = false;
-                showToast('Excel に同期しました', 'success');
+                showToast('同期しました', 'success');
             } catch (err) {
                 syncToast?.remove();
                 isSyncing = false;
                 console.error('Sync error:', err);
 
-                // Show detailed error for debugging
                 let msg = '同期エラー: ';
                 if (err.message === 'Not authenticated') {
                     msg += '認証切れ。設定から再ログインしてください。';
@@ -3128,7 +3287,6 @@
                     msg += 'アクセス権限がありません。Azure で Files.ReadWrite 権限を確認してください。';
                 } else if (err.message.includes('400') || err.message.includes('invalidRequest') || err.message.includes('item ID')) {
                     msg += 'ファイルIDが無効です。設定でファイルを再選択してください。';
-                    // Clear invalid file ID
                     appState.excelFileId = null;
                     appState.excelFileName = null;
                     localStorage.removeItem('kumon_excelFileId');
@@ -3148,149 +3306,9 @@
             }
         }
 
-        // ========== SYNC FROM EXCEL ==========
+        // syncFromExcel is now just an alias — syncToExcel does read+merge+write
         async function syncFromExcel() {
-            if (!appState.excelFileId) return;
-
-            const token = await getAccessToken();
-            if (!token) return;
-
-            let anyUpdated = false;
-
-            try {
-                // Read employees from Excel — merge metadata, preserve local isIn state
-                const empRows = await readExcelSheet(appState.excelFileId, '従業員');
-                if (empRows.length > 1) {
-                    const excelEmps = empRows.slice(1).map(row => ({
-                        id: row[0],
-                        name: row[1],
-                        dept: row[2],
-                        avatarStyle: row[3] || 'adventurer',
-                        avatarSeed: row[4] || row[1]
-                    })).filter(e => e.id && e.name);
-
-                    if (excelEmps.length > 0) {
-                        // Build a map of current local isIn states
-                        const localStateMap = {};
-                        appState.employees.forEach(e => {
-                            localStateMap[e.id] = { isIn: e.isIn, checkinTime: e.checkinTime };
-                        });
-
-                        // Merge: use Excel for metadata, preserve local isIn/checkinTime
-                        appState.employees = excelEmps.map(ee => {
-                            const local = localStateMap[ee.id];
-                            return {
-                                ...ee,
-                                isIn: local ? local.isIn : false,
-                                checkinTime: local ? local.checkinTime : null
-                            };
-                        });
-                        anyUpdated = true;
-                    }
-                }
-            } catch (err) {
-                console.log('Failed to read employees from Excel:', err);
-            }
-
-            try {
-                // Read locations from Excel
-                const locRows = await readExcelSheet(appState.excelFileId, '拠点');
-                if (locRows.length > 1) {
-                    const excelLocs = locRows.slice(1).map(row => ({
-                        id: row[0],
-                        name: row[1]
-                    })).filter(l => l.id && l.name);
-
-                    if (excelLocs.length > 0) {
-                        appState.locations = excelLocs;
-                        if (!appState.locations.find(l => l.id === appState.currentLocationId)) {
-                            appState.currentLocationId = appState.locations[0]?.id || null;
-                        }
-                        anyUpdated = true;
-                    }
-                }
-            } catch (err) {
-                console.log('Failed to read locations from Excel:', err);
-            }
-
-            try {
-                // Read attendance records from Excel — merge with local
-                const recRows = await readExcelSheet(appState.excelFileId, '勤怠記録');
-                if (recRows.length > 1) {
-                    const today = new Date().toISOString().split('T')[0];
-                    const excelRecords = recRows.slice(1).map(row => {
-                        const date = row[0];
-                        const empName = row[1];
-                        const empDept = row[2];
-                        const location = row[3];
-                        const inTime = row[4];
-                        const outTime = row[5];
-                        const rawEmpId = row[9] || '';
-                        const rawInTs = row[10] || '';
-                        const rawOutTs = row[11] || '';
-
-                        let empId = rawEmpId;
-                        if (!empId) {
-                            const emp = appState.employees.find(e => e.name === empName);
-                            empId = emp ? emp.id : 'unknown';
-                        }
-
-                        let inTs = rawInTs || null;
-                        let outTs = rawOutTs || null;
-                        if (!inTs && inTime && inTime !== '--:--') {
-                            inTs = `${date}T${inTime}:00`;
-                        }
-                        if (!outTs && outTime && outTime !== '--:--') {
-                            outTs = `${date}T${outTime}:00`;
-                        }
-
-                        return { date, empId, empName, empDept, location, inTs, outTs };
-                    }).filter(r => r.date && r.empName);
-
-                    // Merge: combine local and Excel records, deduplicate by empId+inTs
-                    const mergedMap = new Map();
-                    // Local records first
-                    appState.records.forEach(r => {
-                        const key = `${r.empId}_${r.inTs}`;
-                        mergedMap.set(key, r);
-                    });
-                    // Excel records: add missing ones, update outTs if Excel has it
-                    excelRecords.forEach(r => {
-                        const key = `${r.empId}_${r.inTs}`;
-                        const existing = mergedMap.get(key);
-                        if (!existing) {
-                            mergedMap.set(key, r);
-                        } else if (!existing.outTs && r.outTs) {
-                            // Excel has checkout that local doesn't — apply it
-                            existing.outTs = r.outTs;
-                        }
-                    });
-                    appState.records = Array.from(mergedMap.values());
-
-                    // Update isIn status from merged records
-                    appState.employees.forEach(emp => {
-                        const openRecord = appState.records.find(
-                            r => r.empId === emp.id && r.date === today && r.inTs && !r.outTs
-                        );
-                        if (openRecord) {
-                            emp.isIn = true;
-                            emp.checkinTime = openRecord.inTs;
-                        }
-                        // Note: do NOT set isIn=false here — local state takes priority
-                        // Only the records determine the final truth after merge
-                    });
-
-                    anyUpdated = true;
-                }
-            } catch (err) {
-                console.log('Failed to read records from Excel:', err);
-            }
-
-            if (anyUpdated) {
-                saveAppState();
-                loadAndRender();
-                updateLocationBadge();
-            }
+            return syncToExcel();
         }
 
         // ========== STORAGE ==========
@@ -3302,12 +3320,10 @@
             localStorage.setItem('kumon_lastSyncTime', appState.lastSyncTime || '');
         }
 
-        // Auto-sync every 30 seconds: pull remote changes first, then push local
+        // Auto-sync every 30 seconds: read → merge → write (all in one)
         setInterval(() => {
             if (navigator.onLine && appState.excelFileId) {
-                syncFromExcel()
-                    .then(() => syncToExcel())
-                    .catch(err => console.error('Auto-sync failed', err));
+                syncToExcel().catch(err => console.error('Auto-sync failed', err));
             }
         }, 30000);
     </script>
