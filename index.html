@@ -3158,7 +3158,7 @@
             let anyUpdated = false;
 
             try {
-                // Read employees from Excel — replace local with Excel data
+                // Read employees from Excel — merge metadata, preserve local isIn state
                 const empRows = await readExcelSheet(appState.excelFileId, '従業員');
                 if (empRows.length > 1) {
                     const excelEmps = empRows.slice(1).map(row => ({
@@ -3166,14 +3166,25 @@
                         name: row[1],
                         dept: row[2],
                         avatarStyle: row[3] || 'adventurer',
-                        avatarSeed: row[4] || row[1],
-                        isIn: false,
-                        checkinTime: null
+                        avatarSeed: row[4] || row[1]
                     })).filter(e => e.id && e.name);
 
-                    // Replace local employees with Excel data (Excel is source of truth)
                     if (excelEmps.length > 0) {
-                        appState.employees = excelEmps;
+                        // Build a map of current local isIn states
+                        const localStateMap = {};
+                        appState.employees.forEach(e => {
+                            localStateMap[e.id] = { isIn: e.isIn, checkinTime: e.checkinTime };
+                        });
+
+                        // Merge: use Excel for metadata, preserve local isIn/checkinTime
+                        appState.employees = excelEmps.map(ee => {
+                            const local = localStateMap[ee.id];
+                            return {
+                                ...ee,
+                                isIn: local ? local.isIn : false,
+                                checkinTime: local ? local.checkinTime : null
+                            };
+                        });
                         anyUpdated = true;
                     }
                 }
@@ -3182,7 +3193,7 @@
             }
 
             try {
-                // Read locations from Excel — replace local with Excel data
+                // Read locations from Excel
                 const locRows = await readExcelSheet(appState.excelFileId, '拠点');
                 if (locRows.length > 1) {
                     const excelLocs = locRows.slice(1).map(row => ({
@@ -3192,7 +3203,6 @@
 
                     if (excelLocs.length > 0) {
                         appState.locations = excelLocs;
-                        // Ensure currentLocationId is valid
                         if (!appState.locations.find(l => l.id === appState.currentLocationId)) {
                             appState.currentLocationId = appState.locations[0]?.id || null;
                         }
@@ -3204,32 +3214,27 @@
             }
 
             try {
-                // Read attendance records from Excel
+                // Read attendance records from Excel — merge with local
                 const recRows = await readExcelSheet(appState.excelFileId, '勤怠記録');
                 if (recRows.length > 1) {
                     const today = new Date().toISOString().split('T')[0];
                     const excelRecords = recRows.slice(1).map(row => {
-                        // Columns: 日付, 氏名, 部署, 拠点, 出勤打刻, 退勤打刻, 給与用出勤, 給与用退勤, 勤務時間, 従業員ID, 出勤TS, 退勤TS
                         const date = row[0];
                         const empName = row[1];
                         const empDept = row[2];
                         const location = row[3];
                         const inTime = row[4];
                         const outTime = row[5];
-
-                        // Use raw TS columns if available (cols 10, 11), else reconstruct
                         const rawEmpId = row[9] || '';
                         const rawInTs = row[10] || '';
                         const rawOutTs = row[11] || '';
 
-                        // Employee ID: use raw column or find by name
                         let empId = rawEmpId;
                         if (!empId) {
                             const emp = appState.employees.find(e => e.name === empName);
                             empId = emp ? emp.id : 'unknown';
                         }
 
-                        // Timestamps: use raw ISO or reconstruct from HH:MM
                         let inTs = rawInTs || null;
                         let outTs = rawOutTs || null;
                         if (!inTs && inTime && inTime !== '--:--') {
@@ -3242,24 +3247,40 @@
                         return { date, empId, empName, empDept, location, inTs, outTs };
                     }).filter(r => r.date && r.empName);
 
-                    if (excelRecords.length > 0) {
-                        appState.records = excelRecords;
-                        anyUpdated = true;
+                    // Merge: combine local and Excel records, deduplicate by empId+inTs
+                    const mergedMap = new Map();
+                    // Local records first
+                    appState.records.forEach(r => {
+                        const key = `${r.empId}_${r.inTs}`;
+                        mergedMap.set(key, r);
+                    });
+                    // Excel records: add missing ones, update outTs if Excel has it
+                    excelRecords.forEach(r => {
+                        const key = `${r.empId}_${r.inTs}`;
+                        const existing = mergedMap.get(key);
+                        if (!existing) {
+                            mergedMap.set(key, r);
+                        } else if (!existing.outTs && r.outTs) {
+                            // Excel has checkout that local doesn't — apply it
+                            existing.outTs = r.outTs;
+                        }
+                    });
+                    appState.records = Array.from(mergedMap.values());
 
-                        // Restore isIn status: check if any employee has an open record today
-                        appState.employees.forEach(emp => {
-                            const openRecord = appState.records.find(
-                                r => r.empId === emp.id && r.date === today && r.inTs && !r.outTs
-                            );
-                            if (openRecord) {
-                                emp.isIn = true;
-                                emp.checkinTime = openRecord.inTs;
-                            } else {
-                                emp.isIn = false;
-                                emp.checkinTime = null;
-                            }
-                        });
-                    }
+                    // Update isIn status from merged records
+                    appState.employees.forEach(emp => {
+                        const openRecord = appState.records.find(
+                            r => r.empId === emp.id && r.date === today && r.inTs && !r.outTs
+                        );
+                        if (openRecord) {
+                            emp.isIn = true;
+                            emp.checkinTime = openRecord.inTs;
+                        }
+                        // Note: do NOT set isIn=false here — local state takes priority
+                        // Only the records determine the final truth after merge
+                    });
+
+                    anyUpdated = true;
                 }
             } catch (err) {
                 console.log('Failed to read records from Excel:', err);
@@ -3281,11 +3302,11 @@
             localStorage.setItem('kumon_lastSyncTime', appState.lastSyncTime || '');
         }
 
-        // Auto-sync every 30 seconds: push local changes, then pull remote changes
+        // Auto-sync every 30 seconds: pull remote changes first, then push local
         setInterval(() => {
             if (navigator.onLine && appState.excelFileId) {
-                syncToExcel()
-                    .then(() => syncFromExcel())
+                syncFromExcel()
+                    .then(() => syncToExcel())
                     .catch(err => console.error('Auto-sync failed', err));
             }
         }, 30000);
