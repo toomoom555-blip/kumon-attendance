@@ -1380,14 +1380,11 @@
                     <thead>
                         <tr>
                             <th>日付</th>
+                            <th>時刻</th>
+                            <th>種別</th>
                             <th>氏名</th>
-                            <th>部署</th>
                             <th>拠点</th>
-                            <th>出勤打刻</th>
-                            <th>退勤打刻</th>
-                            <th>給与用出勤</th>
-                            <th>給与用退勤</th>
-                            <th>勤務時間</th>
+                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody id="recordsTableBody"></tbody>
@@ -1501,6 +1498,33 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="confirmCancel">キャンセル</button>
                 <button class="btn btn-primary" id="confirmOk">確認</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="editRecordModal">
+        <div class="modal-content">
+            <div class="modal-title">勤務時間を修正</div>
+            <div id="editRecordInfo" style="color: var(--ink2); margin-bottom: 16px;"></div>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label">日付</label>
+                <input type="date" id="editRecordDate" class="form-input">
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label">時刻</label>
+                <input type="time" id="editRecordTime" class="form-input" step="60">
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label">種別</label>
+                <select id="editRecordType" class="form-input">
+                    <option value="in">出勤</option>
+                    <option value="out">退勤</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" id="editRecordDelete" style="margin-right: auto;">削除</button>
+                <button class="btn btn-secondary" id="editRecordCancel">キャンセル</button>
+                <button class="btn btn-primary" id="editRecordSave">保存</button>
             </div>
         </div>
     </div>
@@ -1622,8 +1646,49 @@
             selectedEmployeeId: null
         };
 
+        // ========== MIGRATION: old paired records → new event records ==========
+        function migrateRecords() {
+            if (appState.records.length === 0) return;
+
+            // Check if first record is old format (has inTs but no type)
+            const first = appState.records[0];
+            if (first.type === 'in' || first.type === 'out') return; // Already new format
+
+            console.log('Migrating', appState.records.length, 'old records to event format...');
+            const events = [];
+            appState.records.forEach(r => {
+                if (r.inTs) {
+                    events.push({
+                        ts: r.inTs,
+                        date: r.date || r.inTs.split('T')[0],
+                        empId: r.empId,
+                        empName: r.empName,
+                        empDept: r.empDept,
+                        location: r.location || '未設定',
+                        type: 'in'
+                    });
+                }
+                if (r.outTs) {
+                    events.push({
+                        ts: r.outTs,
+                        date: r.date || r.outTs.split('T')[0],
+                        empId: r.empId,
+                        empName: r.empName,
+                        empDept: r.empDept,
+                        location: r.location || '未設定',
+                        type: 'out'
+                    });
+                }
+            });
+            events.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+            appState.records = events;
+            saveAppState();
+            console.log('Migration complete:', events.length, 'events');
+        }
+
         // ========== INITIALIZATION ==========
         window.addEventListener('DOMContentLoaded', () => {
+            migrateRecords();
             initHeader();
             initNav();
             initEventListeners();
@@ -2369,6 +2434,8 @@
         }
 
         // ========== CHECK IN / OUT ==========
+        const DUPLICATE_THRESHOLD_MS = 60 * 1000; // 1分以内の連続打刻を防止
+
         async function checkInEmployee(type) {
             if (!appState.selectedEmployeeId) {
                 showToast('従業員を選択してください', 'warning');
@@ -2379,11 +2446,25 @@
             if (!emp) return;
 
             const now = new Date();
+
+            // 1分以内の連続打刻チェック
+            const lastEvent = [...appState.records]
+                .reverse()
+                .find(r => r.empId === emp.id);
+            if (lastEvent) {
+                const elapsed = now - new Date(lastEvent.ts);
+                if (elapsed < DUPLICATE_THRESHOLD_MS) {
+                    const remaining = Math.ceil((DUPLICATE_THRESHOLD_MS - elapsed) / 1000);
+                    showToast(`${emp.name}: 連続打刻防止 — あと${remaining}秒お待ちください`, 'warning');
+                    return;
+                }
+            }
+
             const ts = now.toISOString();
             const locId = appState.currentLocationId;
             const loc = appState.locations.find(l => l.id === locId);
 
-            // Create event record (each check-in and check-out is a separate event)
+            // Create event record
             const event = {
                 ts: ts,
                 date: now.toISOString().split('T')[0],
@@ -2786,46 +2867,27 @@
             const filterEmp = document.getElementById('recordsFilterEmp').value;
             const filterLoc = document.getElementById('recordsFilterLoc').value;
 
-            let pairs = buildPairedRecords(appState.records);
-            if (filterEmp) pairs = pairs.filter(r => r.empId === filterEmp);
-            if (filterLoc) pairs = pairs.filter(r => r.location === filterLoc);
+            let events = [...appState.records];
+            if (filterEmp) events = events.filter(r => r.empId === filterEmp);
+            if (filterLoc) events = events.filter(r => r.location === filterLoc);
 
             const tbody = document.getElementById('recordsTableBody');
             tbody.innerHTML = '';
 
-            pairs.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(r => {
-                const inDate = r.inTs ? new Date(r.inTs) : null;
-                const outDate = r.outTs ? new Date(r.outTs) : null;
-
-                let payInTime = '--:--';
-                let payOutTime = '--:--';
-                if (inDate) {
-                    const rounded = roundUpTo15Min(inDate);
-                    payInTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
-                }
-                if (outDate) {
-                    const rounded = roundDownTo15Min(outDate);
-                    payOutTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
-                }
-
-                let duration = '--:--';
-                if (inDate && outDate) {
-                    const hours = Math.floor((outDate - inDate) / (1000 * 3600));
-                    const mins = Math.floor(((outDate - inDate) / (1000 * 60)) % 60);
-                    duration = `${hours}:${String(mins).padStart(2, '0')}`;
-                }
+            events.sort((a, b) => new Date(b.ts) - new Date(a.ts)).forEach((r, idx) => {
+                const d = new Date(r.ts);
+                const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                const typeLabel = r.type === 'in' ? '出勤' : '退勤';
+                const typeClass = r.type === 'in' ? 'color: var(--green);' : 'color: var(--red, #e53e3e);';
 
                 const row = tbody.insertRow();
                 row.innerHTML = `
                     <td>${r.date}</td>
+                    <td>${time}</td>
+                    <td style="${typeClass} font-weight: 600;">${typeLabel}</td>
                     <td>${r.empName}</td>
-                    <td>${r.empDept}</td>
                     <td>${r.location}</td>
-                    <td>${inDate ? `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}` : '--:--'}</td>
-                    <td>${outDate ? `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}` : '--:--'}</td>
-                    <td>${payInTime}</td>
-                    <td>${payOutTime}</td>
-                    <td>${duration}</td>
+                    <td><button class="btn btn-secondary btn-small" onclick="openEditRecord('${r.empId}', '${r.ts}')">編集</button></td>
                 `;
             });
 
@@ -2853,6 +2915,99 @@
                 locSelect.appendChild(opt);
             });
         }
+
+        // ========== RECORD EDITING ==========
+        let editingRecordKey = null; // { empId, ts }
+
+        function openEditRecord(empId, ts) {
+            const record = appState.records.find(r => r.empId === empId && r.ts === ts);
+            if (!record) {
+                showToast('レコードが見つかりません', 'error');
+                return;
+            }
+
+            editingRecordKey = { empId, ts };
+            const d = new Date(ts);
+
+            document.getElementById('editRecordInfo').textContent =
+                `${record.empName} — ${record.date}`;
+            document.getElementById('editRecordDate').value = record.date;
+            document.getElementById('editRecordTime').value =
+                `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            document.getElementById('editRecordType').value = record.type;
+
+            document.getElementById('editRecordModal').classList.add('active');
+        }
+
+        // Event listeners for edit modal
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('editRecordCancel').addEventListener('click', () => {
+                document.getElementById('editRecordModal').classList.remove('active');
+                editingRecordKey = null;
+            });
+
+            document.getElementById('editRecordSave').addEventListener('click', () => {
+                if (!editingRecordKey) return;
+
+                const record = appState.records.find(
+                    r => r.empId === editingRecordKey.empId && r.ts === editingRecordKey.ts
+                );
+                if (!record) return;
+
+                const newDate = document.getElementById('editRecordDate').value;
+                const newTime = document.getElementById('editRecordTime').value;
+                const newType = document.getElementById('editRecordType').value;
+
+                if (!newDate || !newTime) {
+                    showToast('日付と時刻を入力してください', 'warning');
+                    return;
+                }
+
+                // Build new timestamp
+                const newTs = new Date(`${newDate}T${newTime}:00`).toISOString();
+
+                record.ts = newTs;
+                record.date = newDate;
+                record.type = newType;
+
+                saveAppState();
+                loadAndRender();
+                renderRecords();
+                document.getElementById('editRecordModal').classList.remove('active');
+                editingRecordKey = null;
+                showToast('記録を修正しました', 'success');
+
+                // Sync
+                if (appState.excelFileId && navigator.onLine) {
+                    syncToExcel().catch(err => console.error('Edit sync failed', err));
+                }
+            });
+
+            document.getElementById('editRecordDelete').addEventListener('click', async () => {
+                if (!editingRecordKey) return;
+
+                const record = appState.records.find(
+                    r => r.empId === editingRecordKey.empId && r.ts === editingRecordKey.ts
+                );
+                if (!record) return;
+
+                if (await showConfirm('削除', `${record.empName} の ${record.type === 'in' ? '出勤' : '退勤'} 記録を削除しますか？`)) {
+                    appState.records = appState.records.filter(
+                        r => !(r.empId === editingRecordKey.empId && r.ts === editingRecordKey.ts)
+                    );
+                    saveAppState();
+                    loadAndRender();
+                    renderRecords();
+                    document.getElementById('editRecordModal').classList.remove('active');
+                    editingRecordKey = null;
+                    showToast('記録を削除しました', 'success');
+
+                    if (appState.excelFileId && navigator.onLine) {
+                        syncToExcel().catch(err => console.error('Delete record sync failed', err));
+                    }
+                }
+            });
+        });
 
         function renderSettings() {
             const authStatus = document.getElementById('authStatus');
@@ -3042,17 +3197,62 @@
         // ========== EVENT-BASED SYNC ==========
         let isSyncing = false;
 
-        // Parse Excel event rows into event objects
+        // Parse Excel event rows into event objects (handles both new and old format)
         function parseExcelEvents(rows) {
-            return rows.slice(1).map(row => ({
-                ts: row[0] || '',
-                date: row[1] || '',
-                empId: row[2] || '',
-                empName: row[3] || '',
-                empDept: row[4] || '',
-                location: row[5] || '',
-                type: row[6] || ''
-            })).filter(e => e.ts && e.empId && (e.type === 'in' || e.type === 'out'));
+            if (rows.length < 2) return [];
+            const header = rows[0];
+
+            // Detect format by header
+            if (header[0] === 'タイムスタンプ' && header[6] === '種別') {
+                // New event format
+                return rows.slice(1).map(row => ({
+                    ts: row[0] || '',
+                    date: row[1] || '',
+                    empId: row[2] || '',
+                    empName: row[3] || '',
+                    empDept: row[4] || '',
+                    location: row[5] || '',
+                    type: row[6] || ''
+                })).filter(e => e.ts && e.empId && (e.type === 'in' || e.type === 'out'));
+            } else {
+                // Old paired format — convert to events
+                console.log('Converting old Excel format to events...');
+                const events = [];
+                rows.slice(1).forEach(row => {
+                    const date = row[0] || '';
+                    const empName = row[1] || '';
+                    const empDept = row[2] || '';
+                    const location = row[3] || '';
+                    const rawEmpId = row[9] || '';
+                    const rawInTs = row[10] || '';
+                    const rawOutTs = row[11] || '';
+                    const inTime = row[4] || '';
+                    const outTime = row[5] || '';
+
+                    let empId = rawEmpId;
+                    if (!empId) {
+                        const emp = appState.employees.find(e => e.name === empName);
+                        empId = emp ? emp.id : 'unknown';
+                    }
+
+                    let inTs = rawInTs || null;
+                    if (!inTs && inTime && inTime !== '--:--') {
+                        inTs = `${date}T${inTime}:00`;
+                    }
+                    let outTs = rawOutTs || null;
+                    if (!outTs && outTime && outTime !== '--:--') {
+                        outTs = `${date}T${outTime}:00`;
+                    }
+
+                    if (inTs) {
+                        events.push({ ts: inTs, date, empId, empName, empDept, location, type: 'in' });
+                    }
+                    if (outTs) {
+                        events.push({ ts: outTs, date, empId, empName, empDept, location, type: 'out' });
+                    }
+                });
+                return events.filter(e => e.ts && e.empId);
+            }
         }
 
         // Merge local and Excel events (deduplicate by empId+ts)
