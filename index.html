@@ -1948,6 +1948,10 @@
                 document.getElementById('excelModal').classList.remove('active');
                 renderSettings();
                 showToast('Excel ファイルを設定しました', 'success');
+                // Sync data from Excel after file selection
+                syncFromExcel().then(() => {
+                    showToast('データを同期しました', 'success');
+                }).catch(err => console.log('Sync after file select failed:', err));
             });
             document.getElementById('btnAddLoc').addEventListener('click', addLocation);
             document.getElementById('btnManualSync').addEventListener('click', syncToExcel);
@@ -2046,6 +2050,12 @@
                 document.getElementById('wizard').classList.remove('active');
                 loadAndRender();
                 showToast('セットアップが完了しました', 'success');
+                // Sync data from Excel after wizard completion
+                if (appState.excelFileId) {
+                    syncFromExcel().then(() => {
+                        loadAndRender();
+                    }).catch(err => console.log('Sync after wizard failed:', err));
+                }
             });
 
             // Skip button — offline demo mode
@@ -2195,6 +2205,10 @@
                 });
                 renderSettings();
                 showToast('ログインしました', 'success');
+                // Sync data from Excel after login
+                if (appState.excelFileId) {
+                    syncFromExcel().catch(err => console.log('Sync after login failed:', err));
+                }
             } catch (err) {
                 showToast('ログインに失敗しました', 'error');
                 console.error(err);
@@ -3138,8 +3152,10 @@
             const token = await getAccessToken();
             if (!token) return;
 
+            let anyUpdated = false;
+
             try {
-                // Read employees from Excel
+                // Read employees from Excel — replace local with Excel data
                 const empRows = await readExcelSheet(appState.excelFileId, '従業員');
                 if (empRows.length > 1) {
                     const excelEmps = empRows.slice(1).map(row => ({
@@ -3152,32 +3168,18 @@
                         checkinTime: null
                     })).filter(e => e.id && e.name);
 
-                    // Merge: add employees from Excel that don't exist locally
-                    let updated = false;
-                    excelEmps.forEach(excelEmp => {
-                        const existing = appState.employees.find(e => e.id === excelEmp.id);
-                        if (!existing) {
-                            appState.employees.push(excelEmp);
-                            updated = true;
-                        } else {
-                            // Update name/dept if changed
-                            if (existing.name !== excelEmp.name || existing.dept !== excelEmp.dept) {
-                                existing.name = excelEmp.name;
-                                existing.dept = excelEmp.dept;
-                                existing.avatarStyle = excelEmp.avatarStyle;
-                                existing.avatarSeed = excelEmp.avatarSeed;
-                                updated = true;
-                            }
-                        }
-                    });
-
-                    if (updated) {
-                        saveAppState();
-                        loadAndRender();
+                    // Replace local employees with Excel data (Excel is source of truth)
+                    if (excelEmps.length > 0) {
+                        appState.employees = excelEmps;
+                        anyUpdated = true;
                     }
                 }
+            } catch (err) {
+                console.log('Failed to read employees from Excel:', err);
+            }
 
-                // Read locations from Excel
+            try {
+                // Read locations from Excel — replace local with Excel data
                 const locRows = await readExcelSheet(appState.excelFileId, '拠点');
                 if (locRows.length > 1) {
                     const excelLocs = locRows.slice(1).map(row => ({
@@ -3185,21 +3187,76 @@
                         name: row[1]
                     })).filter(l => l.id && l.name);
 
-                    let locUpdated = false;
-                    excelLocs.forEach(excelLoc => {
-                        if (!appState.locations.find(l => l.id === excelLoc.id)) {
-                            appState.locations.push(excelLoc);
-                            locUpdated = true;
+                    if (excelLocs.length > 0) {
+                        appState.locations = excelLocs;
+                        // Ensure currentLocationId is valid
+                        if (!appState.locations.find(l => l.id === appState.currentLocationId)) {
+                            appState.currentLocationId = appState.locations[0]?.id || null;
                         }
-                    });
-
-                    if (locUpdated) {
-                        saveAppState();
-                        loadAndRender();
+                        anyUpdated = true;
                     }
                 }
             } catch (err) {
-                console.log('Sync from Excel failed (sheets may not exist yet):', err);
+                console.log('Failed to read locations from Excel:', err);
+            }
+
+            try {
+                // Read attendance records from Excel
+                const recRows = await readExcelSheet(appState.excelFileId, '勤怠記録');
+                if (recRows.length > 1) {
+                    const today = new Date().toISOString().split('T')[0];
+                    const excelRecords = recRows.slice(1).map(row => {
+                        // Columns: 日付, 氏名, 部署, 拠点, 出勤打刻, 退勤打刻, 給与用出勤, 給与用退勤, 勤務時間
+                        const date = row[0];
+                        const empName = row[1];
+                        const empDept = row[2];
+                        const location = row[3];
+                        const inTime = row[4];
+                        const outTime = row[5];
+
+                        // Find employee ID by name
+                        const emp = appState.employees.find(e => e.name === empName);
+                        const empId = emp ? emp.id : 'unknown';
+
+                        // Reconstruct ISO timestamps from date + time
+                        let inTs = null, outTs = null;
+                        if (inTime && inTime !== '--:--') {
+                            inTs = `${date}T${inTime}:00`;
+                        }
+                        if (outTime && outTime !== '--:--') {
+                            outTs = `${date}T${outTime}:00`;
+                        }
+
+                        return { date, empId, empName, empDept, location, inTs, outTs };
+                    }).filter(r => r.date && r.empName);
+
+                    if (excelRecords.length > 0) {
+                        appState.records = excelRecords;
+                        anyUpdated = true;
+
+                        // Restore isIn status: check if any employee has an open record today
+                        appState.employees.forEach(emp => {
+                            const openRecord = appState.records.find(
+                                r => r.empId === emp.id && r.date === today && r.inTs && !r.outTs
+                            );
+                            if (openRecord) {
+                                emp.isIn = true;
+                                emp.checkinTime = openRecord.inTs;
+                            } else {
+                                emp.isIn = false;
+                                emp.checkinTime = null;
+                            }
+                        });
+                    }
+                }
+            } catch (err) {
+                console.log('Failed to read records from Excel:', err);
+            }
+
+            if (anyUpdated) {
+                saveAppState();
+                loadAndRender();
+                updateLocationBadge();
             }
         }
 
