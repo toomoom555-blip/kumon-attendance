@@ -1432,6 +1432,20 @@
                 </div>
 
                 <div class="settings-section">
+                    <div class="settings-title">デバイス設定</div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label">このデバイスの名前</div>
+                            <div class="settings-value" id="deviceNameDisplay">未設定</div>
+                        </div>
+                        <button class="btn btn-secondary btn-small" id="btnChangeDevice">変更</button>
+                    </div>
+                    <div class="settings-desc" style="font-size: 12px; color: var(--ink2); margin-top: 8px; padding: 8px; background: var(--surface2); border-radius: 8px;">
+                        このデバイス名は Excelレコードに記録され、どの端末から打刻したかを追跡できます。
+                    </div>
+                </div>
+
+                <div class="settings-section">
                     <div class="settings-title">その他</div>
                     <button class="btn btn-danger" style="width: 100%;" id="btnReset">すべてのデータをリセット</button>
                 </div>
@@ -1488,6 +1502,27 @@
                     <button type="submit" class="btn btn-primary">保存</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Device Modal -->
+    <div class="modal" id="deviceModal">
+        <div class="modal-content">
+            <div class="modal-title">デバイス名を設定</div>
+            <div style="color: var(--ink2); margin-bottom: 16px; font-size: 14px;">
+                このデバイスの名前を設定してください。Excelレコードに記録され、どの端末から打刻したかを追跡できます。
+            </div>
+            <div class="form-group">
+                <label class="form-label">デバイス名</label>
+                <input type="text" class="form-input" id="deviceNameInput" placeholder="例: iPad田中, iPhone太郎">
+                <div style="font-size: 12px; color: var(--ink2); margin-top: 8px;">
+                    自動検出: <span id="autoDeviceDetect" style="font-weight: 600;"></span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="deviceModalCancel">キャンセル</button>
+                <button class="btn btn-primary" id="deviceModalSave">保存</button>
+            </div>
         </div>
     </div>
 
@@ -2020,6 +2055,29 @@
             });
             document.getElementById('btnAddLoc').addEventListener('click', addLocation);
             document.getElementById('btnManualSync').addEventListener('click', syncToExcel);
+            // Device modal handlers
+            document.getElementById('btnChangeDevice').addEventListener('click', () => {
+                document.getElementById('autoDeviceDetect').textContent = getDeviceInfo();
+                document.getElementById('deviceNameInput').value = getDeviceName();
+                document.getElementById('deviceModal').classList.add('active');
+            });
+
+            document.getElementById('deviceModalCancel').addEventListener('click', () => {
+                document.getElementById('deviceModal').classList.remove('active');
+            });
+
+            document.getElementById('deviceModalSave').addEventListener('click', () => {
+                const name = document.getElementById('deviceNameInput').value.trim();
+                if (!name) {
+                    showToast('デバイス名を入力してください', 'warning');
+                    return;
+                }
+                setDeviceName(name);
+                showToast('デバイス名を保存しました', 'success');
+                document.getElementById('deviceModal').classList.remove('active');
+                renderSettings();
+            });
+
             document.getElementById('btnReset').addEventListener('click', async () => {
                 if (await showConfirm('リセット', 'すべてのデータが削除されます。本当に実行しますか？')) {
                     localStorage.clear();
@@ -2472,7 +2530,9 @@
                 empName: emp.name,
                 empDept: emp.dept,
                 location: loc?.name || '未設定',
-                type: type  // 'in' or 'out'
+                type: type  // 'in' or 'out',
+                device: getDeviceInfo(),
+                deviceName: getDeviceName()
             };
             appState.records.push(event);
 
@@ -2577,6 +2637,13 @@
 
         // ========== RENDERING ==========
         function loadAndRender() {
+            // Cache emp status to avoid redundant calculations
+            const empStatusCache = new Map();
+            appState.employees.forEach(emp => {
+                empStatusCache.set(emp.id, getEmpStatus(emp.id));
+            });
+            window.empStatusCache = empStatusCache;
+
             renderScanTab();
             updateDashboardStats();
             renderEmployeeGrid();
@@ -2594,7 +2661,7 @@
 
             // Show all employees regardless of location
             appState.employees.forEach(emp => {
-                const status = getEmpStatus(emp.id);
+                const status = (window.empStatusCache && window.empStatusCache.get(emp.id)) || getEmpStatus(emp.id);
                 const div = document.createElement('div');
                 div.className = 'employee-item' + (emp.id === appState.selectedEmployeeId ? ' selected' : '');
                 const seed = emp.avatarSeed || emp.name;
@@ -3029,6 +3096,12 @@
                 ? new Date(appState.lastSyncTime).toLocaleString('ja-JP')
                 : '未実施';
 
+            // Update device name display
+            const deviceNameEl = document.getElementById('deviceNameDisplay');
+            if (deviceNameEl) {
+                deviceNameEl.textContent = getDeviceName();
+            }
+
             const locList = document.getElementById('locationList');
             locList.innerHTML = '';
             appState.locations.forEach(loc => {
@@ -3348,9 +3421,9 @@
                 // ===== STEP 4: WRITE merged data to Excel =====
                 // Events sheet (simple append-friendly format)
                 const eventValues = [
-                    ['タイムスタンプ', '日付', '従業員ID', '氏名', '部署', '拠点', '種別'],
-                    ...mergedEvents.map(e => [
-                        e.ts, e.date, e.empId, e.empName, e.empDept, e.location, e.type
+                    ['タイムスタンプ', '日付', '従業員ID', '氏名', '部署', '拠点', '種別', 'デバイス'],
+                    ...getLastTwoWeeksEvents(mergedEvents).map(e => [
+                        e.ts, e.date, e.empId, e.empName, e.empDept, e.location, e.type, e.device || 'Unknown'
                     ])
                 ];
                 await writeExcelSheet(appState.excelFileId, '勤怠記録', eventValues);
@@ -3416,7 +3489,40 @@
             return syncToExcel();
         }
 
-        // ========== STORAGE ==========
+        
+        // ========== DEVICE MANAGEMENT ==========
+        function getDeviceInfo() {
+            const ua = navigator.userAgent;
+            let device = 'Unknown';
+
+            if (/iPad/.test(ua)) device = 'iPad';
+            else if (/iPhone/.test(ua)) device = 'iPhone';
+            else if (/Android/.test(ua)) device = 'Android';
+            else if (/Windows/.test(ua)) device = 'Windows PC';
+            else if (/Mac/.test(ua)) device = 'Mac';
+            else if (/Linux/.test(ua)) device = 'Linux';
+
+            return device;
+        }
+
+        function setDeviceName(name) {
+            appState.deviceName = name;
+            localStorage.setItem('kumon_deviceName', name);
+        }
+
+        function getDeviceName() {
+            return appState.deviceName || 'Unknown Device';
+        }
+
+
+        // Get events from the last 2 weeks (for Excel optimization)
+        function getLastTwoWeeksEvents(events) {
+            const twoWeeksAgo = new Date();
+            twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+            return events.filter(e => new Date(e.ts) >= twoWeeksAgo);
+        }
+
+// ========== STORAGE ==========
         function saveAppState() {
             localStorage.setItem('kumon_locations', JSON.stringify(appState.locations));
             localStorage.setItem('kumon_employees', JSON.stringify(appState.employees));
