@@ -1503,7 +1503,7 @@
                 </div>
             </form>
         </div>
-    </div>
+
 
     <!-- Device Modal -->
     <div class="modal" id="deviceModal">
@@ -1524,6 +1524,7 @@
                 <button class="btn btn-primary" id="deviceModalSave">保存</button>
             </div>
         </div>
+    </div>
     </div>
 
     <div class="modal" id="confirmModal">
@@ -2055,28 +2056,38 @@
             });
             document.getElementById('btnAddLoc').addEventListener('click', addLocation);
             document.getElementById('btnManualSync').addEventListener('click', syncToExcel);
+
             // Device modal handlers
-            document.getElementById('btnChangeDevice').addEventListener('click', () => {
-                document.getElementById('autoDeviceDetect').textContent = getDeviceInfo();
-                document.getElementById('deviceNameInput').value = getDeviceName();
-                document.getElementById('deviceModal').classList.add('active');
-            });
+            const btnChangeDevice = document.getElementById('btnChangeDevice');
+            if (btnChangeDevice) {
+                btnChangeDevice.addEventListener('click', () => {
+                    document.getElementById('autoDeviceDetect').textContent = getDeviceInfo();
+                    document.getElementById('deviceNameInput').value = getDeviceName();
+                    document.getElementById('deviceModal').classList.add('active');
+                });
+            }
 
-            document.getElementById('deviceModalCancel').addEventListener('click', () => {
-                document.getElementById('deviceModal').classList.remove('active');
-            });
+            const deviceModalCancel = document.getElementById('deviceModalCancel');
+            if (deviceModalCancel) {
+                deviceModalCancel.addEventListener('click', () => {
+                    document.getElementById('deviceModal').classList.remove('active');
+                });
+            }
 
-            document.getElementById('deviceModalSave').addEventListener('click', () => {
-                const name = document.getElementById('deviceNameInput').value.trim();
-                if (!name) {
-                    showToast('デバイス名を入力してください', 'warning');
-                    return;
-                }
-                setDeviceName(name);
-                showToast('デバイス名を保存しました', 'success');
-                document.getElementById('deviceModal').classList.remove('active');
-                renderSettings();
-            });
+            const deviceModalSave = document.getElementById('deviceModalSave');
+            if (deviceModalSave) {
+                deviceModalSave.addEventListener('click', () => {
+                    const name = document.getElementById('deviceNameInput').value.trim();
+                    if (!name) {
+                        showToast('デバイス名を入力してください', 'warning');
+                        return;
+                    }
+                    setDeviceName(name);
+                    showToast('デバイス名を保存しました', 'success');
+                    document.getElementById('deviceModal').classList.remove('active');
+                    renderSettings();
+                });
+            }
 
             document.getElementById('btnReset').addEventListener('click', async () => {
                 if (await showConfirm('リセット', 'すべてのデータが削除されます。本当に実行しますか？')) {
@@ -2530,7 +2541,7 @@
                 empName: emp.name,
                 empDept: emp.dept,
                 location: loc?.name || '未設定',
-                type: type  // 'in' or 'out',
+                type: type,  // 'in' or 'out'
                 device: getDeviceInfo(),
                 deviceName: getDeviceName()
             };
@@ -2637,13 +2648,6 @@
 
         // ========== RENDERING ==========
         function loadAndRender() {
-            // Cache emp status to avoid redundant calculations
-            const empStatusCache = new Map();
-            appState.employees.forEach(emp => {
-                empStatusCache.set(emp.id, getEmpStatus(emp.id));
-            });
-            window.empStatusCache = empStatusCache;
-
             renderScanTab();
             updateDashboardStats();
             renderEmployeeGrid();
@@ -2661,7 +2665,7 @@
 
             // Show all employees regardless of location
             appState.employees.forEach(emp => {
-                const status = (window.empStatusCache && window.empStatusCache.get(emp.id)) || getEmpStatus(emp.id);
+                const status = getEmpStatus(emp.id);
                 const div = document.createElement('div');
                 div.className = 'employee-item' + (emp.id === appState.selectedEmployeeId ? ' selected' : '');
                 const seed = emp.avatarSeed || emp.name;
@@ -3513,7 +3517,6 @@
         function getDeviceName() {
             return appState.deviceName || 'Unknown Device';
         }
-
 
         // Get events from the last 2 weeks (for Excel optimization)
         function getLastTwoWeeksEvents(events) {
