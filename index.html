@@ -1679,6 +1679,7 @@
             lastSyncTime: localStorage.getItem('kumon_lastSyncTime') || null,
             excelFileId: localStorage.getItem('kumon_excelFileId') || null,
             excelFileName: localStorage.getItem('kumon_excelFileName') || null,
+            deviceName: localStorage.getItem('kumon_deviceName') || null,
             selectedEmployeeId: null
         };
 
@@ -3564,6 +3565,7 @@
             localStorage.setItem('kumon_records', JSON.stringify(appState.records));
             localStorage.setItem('kumon_currentLocationId', appState.currentLocationId || '');
             localStorage.setItem('kumon_lastSyncTime', appState.lastSyncTime || '');
+            localStorage.setItem('kumon_deviceName', appState.deviceName || '');
         }
 
         // Auto-sync every 30 seconds: read → merge → write (all in one)
