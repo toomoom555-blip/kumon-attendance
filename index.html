@@ -2772,9 +2772,26 @@
                 saveAppState();
                 renderEmployeeGrid();
                 showToast(`${emp.name} を削除しました`, 'success');
-                // Sync to OneDrive
+
+                // Excel からも即座に削除（同期前に）
                 if (appState.excelFileId && navigator.onLine) {
-                    syncToExcel().catch(err => console.error('Delete sync failed', err));
+                    try {
+                        showToast('Excel から削除中...', 'info', 0);
+                        const token = await getAccessToken();
+                        if (token) {
+                            // 現在の従業員リストを Excel に書き込み（削除済みの状態で）
+                            const empValues = [
+                                ['ID', '氏名', '部署', 'アバタースタイル', 'アバターシード'],
+                                ...appState.employees.map(e => [
+                                    e.id, e.name, e.dept || '', e.avatarStyle || 'adventurer', e.avatarSeed || e.name
+                                ])
+                            ];
+                            await writeExcelSheet(appState.excelFileId, '従業員', empValues);
+                            showToast('Excel から削除しました', 'success');
+                        }
+                    } catch (err) {
+                        console.warn('Excel delete failed:', err);
+                    }
                 }
             }
         }
@@ -3143,9 +3160,24 @@
                 renderSettings();
                 updateLocationBadge();
                 showToast(`${loc.name} を削除しました`, 'success');
-                // Sync to OneDrive
+
+                // Excel からも即座に削除（同期前に）
                 if (appState.excelFileId && navigator.onLine) {
-                    syncToExcel().catch(err => console.error('Location delete sync failed', err));
+                    try {
+                        showToast('Excel から削除中...', 'info', 0);
+                        const token = await getAccessToken();
+                        if (token) {
+                            // 現在の拠点リストを Excel に書き込み（削除済みの状態で）
+                            const locValues = [
+                                ['ID', '拠点名'],
+                                ...appState.locations.map(l => [l.id, l.name])
+                            ];
+                            await writeExcelSheet(appState.excelFileId, '拠点', locValues);
+                            showToast('Excel から削除しました', 'success');
+                        }
+                    } catch (err) {
+                        console.warn('Excel location delete failed:', err);
+                    }
                 }
             }
         }
