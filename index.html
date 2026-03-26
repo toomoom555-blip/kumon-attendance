@@ -2620,6 +2620,7 @@
             updateDashboardStats();
             renderEmployeeGrid();
             updateActivityFeed();
+            initializeDeviceListeners();
         }
 
         function renderScanTab() {
@@ -3091,39 +3092,6 @@
                 deviceNameEl.textContent = getDeviceName();
             }
 
-            // Setup device change button listener
-            const btnChangeDevice = document.getElementById('btnChangeDevice');
-            if (btnChangeDevice) {
-                btnChangeDevice.onclick = () => {
-                    document.getElementById('autoDeviceDetect').textContent = getDeviceInfo();
-                    document.getElementById('deviceNameInput').value = getDeviceName();
-                    document.getElementById('deviceModal').classList.add('active');
-                };
-            }
-
-            // Setup device modal listeners
-            const deviceModalCancel = document.getElementById('deviceModalCancel');
-            if (deviceModalCancel) {
-                deviceModalCancel.onclick = () => {
-                    document.getElementById('deviceModal').classList.remove('active');
-                };
-            }
-
-            const deviceModalSave = document.getElementById('deviceModalSave');
-            if (deviceModalSave) {
-                deviceModalSave.onclick = () => {
-                    const name = document.getElementById('deviceNameInput').value.trim();
-                    if (!name) {
-                        showToast('デバイス名を入力してください', 'warning');
-                        return;
-                    }
-                    setDeviceName(name);
-                    showToast('デバイス名を保存しました', 'success');
-                    document.getElementById('deviceModal').classList.remove('active');
-                    renderSettings();
-                };
-            }
-
             const locList = document.getElementById('locationList');
             locList.innerHTML = '';
             appState.locations.forEach(loc => {
@@ -3549,6 +3517,50 @@
 
         function getDeviceName() {
             return appState.deviceName || 'Unknown Device';
+        }
+
+        // Initialize device modal listeners
+        function initializeDeviceListeners() {
+            const btnChangeDevice = document.getElementById('btnChangeDevice');
+            if (btnChangeDevice) {
+                btnChangeDevice.onclick = () => {
+                    const modal = document.getElementById('deviceModal');
+                    const autoDetect = document.getElementById('autoDeviceDetect');
+                    const input = document.getElementById('deviceNameInput');
+                    if (modal && autoDetect && input) {
+                        autoDetect.textContent = getDeviceInfo();
+                        input.value = getDeviceName();
+                        modal.classList.add('active');
+                    }
+                };
+            }
+
+            const deviceModalCancel = document.getElementById('deviceModalCancel');
+            if (deviceModalCancel) {
+                deviceModalCancel.onclick = () => {
+                    const modal = document.getElementById('deviceModal');
+                    if (modal) modal.classList.remove('active');
+                };
+            }
+
+            const deviceModalSave = document.getElementById('deviceModalSave');
+            if (deviceModalSave) {
+                deviceModalSave.onclick = () => {
+                    const input = document.getElementById('deviceNameInput');
+                    const modal = document.getElementById('deviceModal');
+                    if (!input) return;
+
+                    const name = input.value.trim();
+                    if (!name) {
+                        showToast('デバイス名を入力してください', 'warning');
+                        return;
+                    }
+                    setDeviceName(name);
+                    showToast('デバイス名を保存しました', 'success');
+                    if (modal) modal.classList.remove('active');
+                    renderSettings();
+                };
+            }
         }
 
         // Get events from the last 2 weeks (for Excel optimization)
