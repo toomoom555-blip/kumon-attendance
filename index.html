@@ -3531,6 +3531,8 @@
                         autoDetect.textContent = getDeviceInfo();
                         input.value = getDeviceName();
                         modal.classList.add('active');
+                        modal.style.opacity = '1';
+                        modal.style.pointerEvents = 'auto';
                     }
                 };
             }
@@ -3539,7 +3541,11 @@
             if (deviceModalCancel) {
                 deviceModalCancel.onclick = () => {
                     const modal = document.getElementById('deviceModal');
-                    if (modal) modal.classList.remove('active');
+                    if (modal) {
+                        modal.classList.remove('active');
+                        modal.style.opacity = '0';
+                        modal.style.pointerEvents = 'none';
+                    }
                 };
             }
 
@@ -3557,7 +3563,11 @@
                     }
                     setDeviceName(name);
                     showToast('デバイス名を保存しました', 'success');
-                    if (modal) modal.classList.remove('active');
+                    if (modal) {
+                        modal.classList.remove('active');
+                        modal.style.opacity = '0';
+                        modal.style.pointerEvents = 'none';
+                    }
                     renderSettings();
                 };
             }
