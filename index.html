@@ -2057,39 +2057,6 @@
             });
             document.getElementById('btnAddLoc').addEventListener('click', addLocation);
             document.getElementById('btnManualSync').addEventListener('click', syncToExcel);
-
-            // Device modal handlers
-            const btnChangeDevice = document.getElementById('btnChangeDevice');
-            if (btnChangeDevice) {
-                btnChangeDevice.addEventListener('click', () => {
-                    document.getElementById('autoDeviceDetect').textContent = getDeviceInfo();
-                    document.getElementById('deviceNameInput').value = getDeviceName();
-                    document.getElementById('deviceModal').classList.add('active');
-                });
-            }
-
-            const deviceModalCancel = document.getElementById('deviceModalCancel');
-            if (deviceModalCancel) {
-                deviceModalCancel.addEventListener('click', () => {
-                    document.getElementById('deviceModal').classList.remove('active');
-                });
-            }
-
-            const deviceModalSave = document.getElementById('deviceModalSave');
-            if (deviceModalSave) {
-                deviceModalSave.addEventListener('click', () => {
-                    const name = document.getElementById('deviceNameInput').value.trim();
-                    if (!name) {
-                        showToast('デバイス名を入力してください', 'warning');
-                        return;
-                    }
-                    setDeviceName(name);
-                    showToast('デバイス名を保存しました', 'success');
-                    document.getElementById('deviceModal').classList.remove('active');
-                    renderSettings();
-                });
-            }
-
             document.getElementById('btnReset').addEventListener('click', async () => {
                 if (await showConfirm('リセット', 'すべてのデータが削除されます。本当に実行しますか？')) {
                     localStorage.clear();
@@ -3122,6 +3089,39 @@
             const deviceNameEl = document.getElementById('deviceNameDisplay');
             if (deviceNameEl) {
                 deviceNameEl.textContent = getDeviceName();
+            }
+
+            // Setup device change button listener
+            const btnChangeDevice = document.getElementById('btnChangeDevice');
+            if (btnChangeDevice) {
+                btnChangeDevice.onclick = () => {
+                    document.getElementById('autoDeviceDetect').textContent = getDeviceInfo();
+                    document.getElementById('deviceNameInput').value = getDeviceName();
+                    document.getElementById('deviceModal').classList.add('active');
+                };
+            }
+
+            // Setup device modal listeners
+            const deviceModalCancel = document.getElementById('deviceModalCancel');
+            if (deviceModalCancel) {
+                deviceModalCancel.onclick = () => {
+                    document.getElementById('deviceModal').classList.remove('active');
+                };
+            }
+
+            const deviceModalSave = document.getElementById('deviceModalSave');
+            if (deviceModalSave) {
+                deviceModalSave.onclick = () => {
+                    const name = document.getElementById('deviceNameInput').value.trim();
+                    if (!name) {
+                        showToast('デバイス名を入力してください', 'warning');
+                        return;
+                    }
+                    setDeviceName(name);
+                    showToast('デバイス名を保存しました', 'success');
+                    document.getElementById('deviceModal').classList.remove('active');
+                    renderSettings();
+                };
             }
 
             const locList = document.getElementById('locationList');
