@@ -3524,51 +3524,17 @@
             const btnChangeDevice = document.getElementById('btnChangeDevice');
             if (btnChangeDevice) {
                 btnChangeDevice.onclick = () => {
-                    const modal = document.getElementById('deviceModal');
-                    const autoDetect = document.getElementById('autoDeviceDetect');
-                    const input = document.getElementById('deviceNameInput');
-                    if (modal && autoDetect && input) {
-                        autoDetect.textContent = getDeviceInfo();
-                        input.value = getDeviceName();
-                        modal.classList.add('active');
-                        modal.style.opacity = '1';
-                        modal.style.pointerEvents = 'auto';
-                    }
-                };
-            }
+                    const autoDetect = getDeviceInfo();
+                    const currentName = getDeviceName();
 
-            const deviceModalCancel = document.getElementById('deviceModalCancel');
-            if (deviceModalCancel) {
-                deviceModalCancel.onclick = () => {
-                    const modal = document.getElementById('deviceModal');
-                    if (modal) {
-                        modal.classList.remove('active');
-                        modal.style.opacity = '0';
-                        modal.style.pointerEvents = 'none';
-                    }
-                };
-            }
+                    const message = `デバイス名を入力してください\n\n自動検出: ${autoDetect}\n現在の設定: ${currentName}`;
+                    const newName = prompt(message, currentName);
 
-            const deviceModalSave = document.getElementById('deviceModalSave');
-            if (deviceModalSave) {
-                deviceModalSave.onclick = () => {
-                    const input = document.getElementById('deviceNameInput');
-                    const modal = document.getElementById('deviceModal');
-                    if (!input) return;
-
-                    const name = input.value.trim();
-                    if (!name) {
-                        showToast('デバイス名を入力してください', 'warning');
-                        return;
+                    if (newName !== null && newName.trim() !== '') {
+                        setDeviceName(newName.trim());
+                        showToast('デバイス名を保存しました', 'success');
+                        renderSettings();
                     }
-                    setDeviceName(name);
-                    showToast('デバイス名を保存しました', 'success');
-                    if (modal) {
-                        modal.classList.remove('active');
-                        modal.style.opacity = '0';
-                        modal.style.pointerEvents = 'none';
-                    }
-                    renderSettings();
                 };
             }
         }
