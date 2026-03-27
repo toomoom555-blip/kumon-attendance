@@ -3427,7 +3427,7 @@
                 // Events sheet (simple append-friendly format)
                 const eventValues = [
                     ['タイムスタンプ', '日付', '従業員ID', '氏名', '部署', '拠点', '種別', 'デバイス'],
-                    ...getLastTwoWeeksEvents(mergedEvents).map(e => [
+                    ...mergedEvents.map(e => [
                         e.ts, e.date, e.empId, e.empName, e.empDept, e.location, e.type, e.device || 'Unknown'
                     ])
                 ];
