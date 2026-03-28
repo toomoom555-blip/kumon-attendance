@@ -1476,6 +1476,25 @@
                                 <input type="text" class="form-input" id="lineManagerUserId" placeholder="Uxxxxxxxxxxxxx" style="margin-top: 4px; font-size: 12px;">
                             </div>
                         </div>
+                        <div class="settings-item" style="margin-top: 8px;">
+                            <div class="settings-info" style="flex: 1;">
+                                <div class="settings-label">通知時刻</div>
+                                <select class="form-input" id="lineNotifyTime" style="margin-top: 4px; font-size: 12px;">
+                                    <option value="07:00">7:00</option>
+                                    <option value="07:30">7:30</option>
+                                    <option value="08:00" selected>8:00</option>
+                                    <option value="08:30">8:30</option>
+                                    <option value="09:00">9:00</option>
+                                    <option value="09:30">9:30</option>
+                                    <option value="10:00">10:00</option>
+                                    <option value="10:30">10:30</option>
+                                    <option value="11:00">11:00</option>
+                                    <option value="11:30">11:30</option>
+                                    <option value="12:00">12:00</option>
+                                </select>
+                                <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">前日の未打刻を翌朝チェックして通知します。ブラウザが開いている必要があります。</div>
+                            </div>
+                        </div>
                         <div style="display: flex; gap: 8px; margin-top: 12px;">
                             <button class="btn btn-primary btn-small" id="btnSaveLineSettings">保存</button>
                             <button class="btn btn-secondary btn-small" id="btnTestLineNotify">テスト送信</button>
@@ -1756,7 +1775,8 @@
             lineNotifyEnabled: localStorage.getItem('kumon_lineNotifyEnabled') === 'true',
             lineGasUrl: localStorage.getItem('kumon_lineGasUrl') || '',
             lineManagerUserId: localStorage.getItem('kumon_lineManagerUserId') || '',
-            lastLineCheckDate: localStorage.getItem('kumon_lastLineCheckDate') || ''
+            lastLineCheckDate: localStorage.getItem('kumon_lastLineCheckDate') || '',
+            lineNotifyTime: localStorage.getItem('kumon_lineNotifyTime') || '23:30'
         };
 
         // ========== HELPER: Get local (JST) date string ==========
@@ -3700,6 +3720,7 @@
             localStorage.setItem('kumon_lineGasUrl', appState.lineGasUrl || '');
             localStorage.setItem('kumon_lineManagerUserId', appState.lineManagerUserId || '');
             localStorage.setItem('kumon_lastLineCheckDate', appState.lastLineCheckDate || '');
+            localStorage.setItem('kumon_lineNotifyTime', appState.lineNotifyTime || '23:30');
         }
 
         // Auto-sync every 30 seconds: read → merge → write (all in one)
@@ -3784,6 +3805,7 @@ function testSend() {
             detail.style.display = toggle.checked ? 'block' : 'none';
             document.getElementById('lineGasUrl').value = appState.lineGasUrl || '';
             document.getElementById('lineManagerUserId').value = appState.lineManagerUserId || '';
+            document.getElementById('lineNotifyTime').value = appState.lineNotifyTime || '23:30';
             document.getElementById('lineNotifyStatus').textContent = toggle.checked ? '有効' : '無効';
 
             // Toggle handler
@@ -3812,6 +3834,7 @@ function testSend() {
             document.getElementById('btnSaveLineSettings').addEventListener('click', () => {
                 appState.lineGasUrl = document.getElementById('lineGasUrl').value.trim();
                 appState.lineManagerUserId = document.getElementById('lineManagerUserId').value.trim();
+                appState.lineNotifyTime = document.getElementById('lineNotifyTime').value;
                 saveAppState();
                 showToast('LINE 通知設定を保存しました', 'success');
             });
@@ -3897,28 +3920,33 @@ function testSend() {
 
             const today = getLocalDateStr();
 
+            // Check yesterday's records (morning notification for previous day)
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const checkDate = getLocalDateStr(yesterday);
+
             // Prevent duplicate checks on the same day
             if (!isTest && appState.lastLineCheckDate === today) {
                 console.log('LINE check already done today');
                 return;
             }
 
-            console.log('Running attendance check for LINE notification...');
+            console.log('Running attendance check for', checkDate, '(yesterday)...');
 
             const notifications = [];
             const incompleteList = [];
 
             appState.employees.forEach(emp => {
-                const todayEvents = appState.records
-                    .filter(r => r.empId === emp.id && r.date === today)
+                const dayEvents = appState.records
+                    .filter(r => r.empId === emp.id && r.date === checkDate)
                     .sort((a, b) => new Date(a.ts) - new Date(b.ts));
 
-                const hasIn = todayEvents.some(e => e.type === 'in');
-                const hasOut = todayEvents.some(e => e.type === 'out');
+                const hasIn = dayEvents.some(e => e.type === 'in');
+                const hasOut = dayEvents.some(e => e.type === 'out');
 
                 if (hasIn && !hasOut) {
                     // Has check-in but no check-out
-                    const inTime = new Date(todayEvents.find(e => e.type === 'in').ts);
+                    const inTime = new Date(dayEvents.find(e => e.type === 'in').ts);
                     const inTimeStr = `${String(inTime.getHours()).padStart(2, '0')}:${String(inTime.getMinutes()).padStart(2, '0')}`;
                     incompleteList.push({
                         emp,
@@ -3930,12 +3958,12 @@ function testSend() {
                     if (emp.lineUserId) {
                         notifications.push({
                             userId: emp.lineUserId,
-                            message: `【勤怠管理】${emp.name}さん\n本日の退勤が未打刻です。\n出勤時刻: ${inTimeStr}\n退勤打刻をお願いします。`
+                            message: `【勤怠管理】${emp.name}さん\n昨日（${checkDate}）の退勤が未打刻です。\n出勤時刻: ${inTimeStr}\n確認をお願いします。`
                         });
                     }
                 } else if (!hasIn && hasOut) {
                     // Has check-out but no check-in
-                    const outTime = new Date(todayEvents.find(e => e.type === 'out').ts);
+                    const outTime = new Date(dayEvents.find(e => e.type === 'out').ts);
                     const outTimeStr = `${String(outTime.getHours()).padStart(2, '0')}:${String(outTime.getMinutes()).padStart(2, '0')}`;
                     incompleteList.push({
                         emp,
@@ -3946,12 +3974,12 @@ function testSend() {
                     if (emp.lineUserId) {
                         notifications.push({
                             userId: emp.lineUserId,
-                            message: `【勤怠管理】${emp.name}さん\n本日の出勤が未打刻です。\n退勤時刻: ${outTimeStr}\n出勤記録の確認をお願いします。`
+                            message: `【勤怠管理】${emp.name}さん\n昨日（${checkDate}）の出勤が未打刻です。\n退勤時刻: ${outTimeStr}\n確認をお願いします。`
                         });
                     }
                 }
                 // hasIn && hasOut → OK, skip
-                // !hasIn && !hasOut → Not working today, skip
+                // !hasIn && !hasOut → Not working that day, skip
             });
 
             if (incompleteList.length === 0) {
@@ -3965,7 +3993,7 @@ function testSend() {
 
             // Build manager notification
             if (appState.lineManagerUserId) {
-                let managerMsg = `【勤怠管理】本日の未完了打刻\n${today}\n\n`;
+                let managerMsg = `【勤怠管理】昨日の未完了打刻\n${checkDate}\n\n`;
                 incompleteList.forEach(item => {
                     managerMsg += `■ ${item.emp.name}（${item.emp.dept}）\n  ${item.issue}: ${item.detail}\n\n`;
                 });
@@ -4019,7 +4047,8 @@ function testSend() {
                 const hh = now.getHours();
                 const mm = now.getMinutes();
 
-                if (hh === 23 && mm === 30) {
+                const [targetHH, targetMM] = (appState.lineNotifyTime || '23:30').split(':').map(Number);
+                if (hh === targetHH && mm === targetMM) {
                     checkAndNotifyIncompleteAttendance();
                 }
             }, 60000); // Check every 60 seconds
@@ -4028,4 +4057,3 @@ function testSend() {
     </script>
 </body>
 </html>
-
