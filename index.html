@@ -3711,13 +3711,27 @@
 
         // Merge employee lists
         function mergeEmployees(localEmps, excelEmps) {
+            const localMap = new Map(localEmps.map(e => [e.id, e]));
             const excelIdSet = new Set(excelEmps.map(e => e.id));
-            const result = excelEmps.map(ee => ({
-                ...ee, isIn: false, checkinTime: null
-            }));
+
+            const result = excelEmps.map(ee => {
+                const local = localMap.get(ee.id);
+                return {
+                    ...ee,
+                    // Preserve local runtime state
+                    isIn: local?.isIn || false,
+                    checkinTime: local?.checkinTime || null,
+                    // Keep local values if Excel has none
+                    lineUserId: ee.lineUserId || local?.lineUserId || '',
+                    customAvatarUrl: ee.customAvatarUrl || local?.customAvatarUrl || ''
+                };
+            });
+
+            // Add employees that only exist locally
             localEmps.forEach(le => {
                 if (!excelIdSet.has(le.id)) result.push(le);
             });
+
             return result;
         }
 
