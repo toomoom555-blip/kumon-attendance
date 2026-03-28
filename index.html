@@ -1447,7 +1447,7 @@
 
                 <div class="settings-section">
                     <div class="settings-title">その他</div>
-                    <button class="btn btn-danger" style="width: 100%;" id="btnReset">すべてのデータをリセット</button>
+                    <button class="btn" style="width: auto; padding: 6px 12px; font-size: 12px; color: var(--ink3); background: transparent; border: 1px solid var(--border); border-radius: 8px;" id="btnReset">データをリセット</button>
                 </div>
             </div>
         </div>
@@ -2567,6 +2567,18 @@
                     if (ev.type === 'in') {
                         // Look for matching 'out'
                         const outEv = dayEvents.slice(i + 1).find(e => e.type === 'out');
+
+                        // Calculate duration from actual timestamps
+                        let duration = '--:--';
+                        if (outEv) {
+                            const inDate = new Date(ev.ts);
+                            const outDate = new Date(outEv.ts);
+                            const totalMins = Math.floor((outDate - inDate) / (1000 * 60));
+                            const hours = Math.floor(totalMins / 60);
+                            const mins = totalMins % 60;
+                            duration = `${hours}:${String(mins).padStart(2, '0')}`;
+                        }
+
                         pairs.push({
                             date: ev.date,
                             empId: ev.empId,
@@ -2574,7 +2586,8 @@
                             empDept: ev.empDept,
                             location: ev.location,
                             inTs: ev.ts,
-                            outTs: outEv ? outEv.ts : null
+                            outTs: outEv ? outEv.ts : null,
+                            duration: duration
                         });
                         if (outEv) {
                             // Skip past the matched out event
@@ -2591,7 +2604,8 @@
                             empDept: ev.empDept,
                             location: ev.location,
                             inTs: null,
-                            outTs: ev.ts
+                            outTs: ev.ts,
+                            duration: '--:--'
                         });
                         i++;
                     }
@@ -3459,7 +3473,7 @@
                 }
 
                 // ===== STEP 4: WRITE merged data to Excel =====
-                // Events sheet (simple append-friendly format)
+                // Store as event format for multi-device safety
                 const eventValues = [
                     ['タイムスタンプ', '日付', '従業員ID', '氏名', '部署', '拠点', '種別', 'デバイス'],
                     ...mergedEvents.map(e => [
@@ -3583,20 +3597,5 @@
 
 // ========== STORAGE ==========
         function saveAppState() {
-            localStorage.setItem('kumon_locations', JSON.stringify(appState.locations));
-            localStorage.setItem('kumon_employees', JSON.stringify(appState.employees));
-            localStorage.setItem('kumon_records', JSON.stringify(appState.records));
-            localStorage.setItem('kumon_currentLocationId', appState.currentLocationId || '');
-            localStorage.setItem('kumon_lastSyncTime', appState.lastSyncTime || '');
-            localStorage.setItem('kumon_deviceName', appState.deviceName || '');
-        }
-
-        // Auto-sync every 30 seconds: read → merge → write (all in one)
-        setInterval(() => {
-            if (navigator.onLine && appState.excelFileId) {
-                syncToExcel().catch(err => console.error('Auto-sync failed', err));
-            }
-        }, 30000);
-    </script>
-</body>
-</html>
+            localSt
+        
