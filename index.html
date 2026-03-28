@@ -1384,6 +1384,7 @@
                             <th>種別</th>
                             <th>氏名</th>
                             <th>拠点</th>
+                            <th>端末</th>
                             <th>操作</th>
                         </tr>
                     </thead>
@@ -2963,6 +2964,7 @@
                     <td style="${typeClass} font-weight: 600;">${typeLabel}</td>
                     <td>${r.empName}</td>
                     <td>${r.location}</td>
+                    <td style="font-size: 12px; color: var(--ink3);">${r.device || ''}</td>
                     <td><button class="btn btn-secondary btn-small" onclick="openEditRecord('${r.empId}', '${r.ts}')">編集</button></td>
                 `;
             });
