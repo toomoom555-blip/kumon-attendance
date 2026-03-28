@@ -1447,6 +1447,47 @@
                 </div>
 
                 <div class="settings-section">
+                    <div class="settings-title">LINE 通知設定</div>
+                    <div class="settings-desc" style="font-size: 12px; color: var(--ink2); margin-bottom: 12px; padding: 8px; background: var(--surface2); border-radius: 8px;">
+                        毎日 23:30 に出退勤が揃っていない従業員を検出し、LINE で通知します。<br>
+                        Google Apps Script を中継サーバーとして使用します。
+                    </div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label">LINE 通知</div>
+                            <div class="settings-value" id="lineNotifyStatus">無効</div>
+                        </div>
+                        <label style="position: relative; display: inline-block; width: 48px; height: 26px; cursor: pointer;">
+                            <input type="checkbox" id="lineNotifyToggle" style="opacity: 0; width: 0; height: 0;">
+                            <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--border2); border-radius: 13px; transition: 0.3s;" id="lineToggleTrack"></span>
+                            <span style="position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; background: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);" id="lineToggleThumb"></span>
+                        </label>
+                    </div>
+                    <div id="lineSettingsDetail" style="display: none;">
+                        <div class="settings-item" style="margin-top: 12px;">
+                            <div class="settings-info" style="flex: 1;">
+                                <div class="settings-label">GAS Webhook URL</div>
+                                <input type="url" class="form-input" id="lineGasUrl" placeholder="https://script.google.com/macros/s/xxx/exec" style="margin-top: 4px; font-size: 12px;">
+                            </div>
+                        </div>
+                        <div class="settings-item" style="margin-top: 8px;">
+                            <div class="settings-info" style="flex: 1;">
+                                <div class="settings-label">責任者 LINE ユーザーID</div>
+                                <input type="text" class="form-input" id="lineManagerUserId" placeholder="Uxxxxxxxxxxxxx" style="margin-top: 4px; font-size: 12px;">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 12px;">
+                            <button class="btn btn-primary btn-small" id="btnSaveLineSettings">保存</button>
+                            <button class="btn btn-secondary btn-small" id="btnTestLineNotify">テスト送信</button>
+                            <button class="btn btn-secondary btn-small" id="btnShowGasTemplate">GAS テンプレート</button>
+                        </div>
+                        <div style="font-size: 11px; color: var(--ink3); margin-top: 8px;">
+                            従業員の LINE ユーザーIDは「従業員」タブの編集画面で設定できます。
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
                     <div class="settings-title">その他</div>
                     <button class="btn" style="width: auto; padding: 6px 12px; font-size: 12px; color: var(--ink3); background: transparent; border: 1px solid var(--border); border-radius: 8px;" id="btnReset">データをリセット</button>
                 </div>
@@ -1490,6 +1531,11 @@
                 <div class="form-group">
                     <label class="form-label">部署</label>
                     <input type="text" class="form-input" id="empDept" placeholder="例: 営業部" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">LINE ユーザーID</label>
+                    <input type="text" class="form-input" id="empLineUserId" placeholder="例: Uxxxxxxxxxxxxx（任意）">
+                    <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">LINE通知に使用。LINE公式アカウントとの友だち追加後に取得できます。</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">アバタースタイル</label>
@@ -1562,6 +1608,31 @@
                 <button class="btn btn-danger" id="editRecordDelete" style="margin-right: auto;">削除</button>
                 <button class="btn btn-secondary" id="editRecordCancel">キャンセル</button>
                 <button class="btn btn-primary" id="editRecordSave">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="gasTemplateModal">
+        <div class="modal-content" style="max-height: 80vh; overflow-y: auto;">
+            <div class="modal-title">Google Apps Script テンプレート</div>
+            <div style="color: var(--ink2); margin-bottom: 12px; font-size: 13px;">
+                以下のコードを Google Apps Script にコピーして「ウェブアプリ」としてデプロイしてください。
+            </div>
+            <div style="margin-bottom: 12px;">
+                <strong style="font-size: 13px;">手順:</strong>
+                <ol style="font-size: 12px; color: var(--ink2); margin: 8px 0; padding-left: 20px;">
+                    <li><a href="https://script.google.com" target="_blank" style="color: var(--blue);">script.google.com</a> → 新しいプロジェクト</li>
+                    <li>下のコードをコピーして貼り付け</li>
+                    <li>LINE_CHANNEL_ACCESS_TOKEN を設定</li>
+                    <li>「デプロイ」→「新しいデプロイ」→ 種類:「ウェブアプリ」</li>
+                    <li>「アクセスできるユーザー」を「全員」に設定</li>
+                    <li>デプロイURLをこのアプリの設定に貼り付け</li>
+                </ol>
+            </div>
+            <pre id="gasTemplateCode" style="background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 11px; font-family: var(--mono); overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; user-select: text; -webkit-user-select: text;"></pre>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="gasTemplateClose">閉じる</button>
+                <button class="btn btn-primary" id="gasTemplateCopy">コピー</button>
             </div>
         </div>
     </div>
@@ -1681,7 +1752,11 @@
             excelFileId: localStorage.getItem('kumon_excelFileId') || null,
             excelFileName: localStorage.getItem('kumon_excelFileName') || null,
             deviceName: localStorage.getItem('kumon_deviceName') || null,
-            selectedEmployeeId: null
+            selectedEmployeeId: null,
+            lineNotifyEnabled: localStorage.getItem('kumon_lineNotifyEnabled') === 'true',
+            lineGasUrl: localStorage.getItem('kumon_lineGasUrl') || '',
+            lineManagerUserId: localStorage.getItem('kumon_lineManagerUserId') || '',
+            lastLineCheckDate: localStorage.getItem('kumon_lastLineCheckDate') || ''
         };
 
         // ========== HELPER: Get local (JST) date string ==========
@@ -1744,6 +1819,7 @@
             } else {
                 initMSAL();
                 loadAndRender();
+                initLineNotifySettings();
                 // Load data from OneDrive in background
                 syncFromExcel().catch(err => console.log('Initial sync from Excel skipped:', err));
             }
@@ -2336,6 +2412,7 @@
         function openEmpModal() {
             document.getElementById('empModalTitle').textContent = '従業員を追加';
             document.getElementById('empForm').reset();
+            document.getElementById('empLineUserId').value = '';
             document.getElementById('empName').focus();
 
             editingEmployeeId = null;
@@ -2416,6 +2493,8 @@
                 return;
             }
 
+            const lineUserId = document.getElementById('empLineUserId').value.trim();
+
             if (editingEmployeeId) {
                 // Update existing employee
                 const emp = appState.employees.find(e => e.id === editingEmployeeId);
@@ -2424,6 +2503,7 @@
                     emp.dept = dept;
                     emp.avatarSeed = avatarSeed;
                     emp.avatarStyle = avatarStyle;
+                    emp.lineUserId = lineUserId || '';
                     // Keep emoji for backward compatibility
                     if (!emp.emoji) emp.emoji = undefined;
                     saveAppState();
@@ -2439,6 +2519,7 @@
                     dept,
                     avatarSeed,
                     avatarStyle,
+                    lineUserId: lineUserId || '',
                     isIn: false,
                     checkinTime: null
                 };
@@ -2464,6 +2545,7 @@
             document.getElementById('empModalTitle').textContent = '従業員を編集';
             document.getElementById('empName').value = emp.name;
             document.getElementById('empDept').value = emp.dept;
+            document.getElementById('empLineUserId').value = emp.lineUserId || '';
 
             populateAvatarPicker();
             const style = emp.avatarStyle || 'adventurer';
@@ -3614,6 +3696,10 @@
             localStorage.setItem('kumon_currentLocationId', appState.currentLocationId || '');
             localStorage.setItem('kumon_lastSyncTime', appState.lastSyncTime || '');
             localStorage.setItem('kumon_deviceName', appState.deviceName || '');
+            localStorage.setItem('kumon_lineNotifyEnabled', appState.lineNotifyEnabled ? 'true' : 'false');
+            localStorage.setItem('kumon_lineGasUrl', appState.lineGasUrl || '');
+            localStorage.setItem('kumon_lineManagerUserId', appState.lineManagerUserId || '');
+            localStorage.setItem('kumon_lastLineCheckDate', appState.lastLineCheckDate || '');
         }
 
         // Auto-sync every 30 seconds: read → merge → write (all in one)
@@ -3622,6 +3708,323 @@
                 syncToExcel().catch(err => console.error('Auto-sync failed', err));
             }
         }, 30000);
+
+        // ========== LINE NOTIFICATION ==========
+        const GAS_TEMPLATE_CODE = `// LINE 勤怠通知 中継スクリプト (Google Apps Script)
+// デプロイ: ウェブアプリ → アクセス:全員
+
+// ★ ここにLINE公式アカウントのチャネルアクセストークンを設定
+const LINE_CHANNEL_ACCESS_TOKEN = 'ここにトークンを貼り付け';
+
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const results = [];
+
+    // 各通知先にメッセージを送信
+    if (data.notifications && Array.isArray(data.notifications)) {
+      data.notifications.forEach(n => {
+        if (n.userId && n.message) {
+          const res = sendLineMessage(n.userId, n.message);
+          results.push({ userId: n.userId, status: res });
+        }
+      });
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: true, results: results }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: false, error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function sendLineMessage(userId, message) {
+  const url = 'https://api.line.me/v2/bot/message/push';
+  const payload = {
+    to: userId,
+    messages: [{ type: 'text', text: message }]
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'Authorization': 'Bearer ' + LINE_CHANNEL_ACCESS_TOKEN
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const res = UrlFetchApp.fetch(url, options);
+  return res.getResponseCode();
+}
+
+// テスト用関数（スクリプトエディタから実行可能）
+function testSend() {
+  const testUserId = 'Uxxxxxxxxxxxxx'; // テスト用ユーザーID
+  const result = sendLineMessage(testUserId, '勤怠通知テスト: 接続成功です！');
+  Logger.log('Result: ' + result);
+}`;
+
+        // Initialize LINE notification settings UI
+        function initLineNotifySettings() {
+            const toggle = document.getElementById('lineNotifyToggle');
+            const detail = document.getElementById('lineSettingsDetail');
+            const track = document.getElementById('lineToggleTrack');
+            const thumb = document.getElementById('lineToggleThumb');
+
+            if (!toggle) return;
+
+            // Set initial state
+            toggle.checked = appState.lineNotifyEnabled;
+            updateToggleUI(toggle.checked);
+            detail.style.display = toggle.checked ? 'block' : 'none';
+            document.getElementById('lineGasUrl').value = appState.lineGasUrl || '';
+            document.getElementById('lineManagerUserId').value = appState.lineManagerUserId || '';
+            document.getElementById('lineNotifyStatus').textContent = toggle.checked ? '有効' : '無効';
+
+            // Toggle handler
+            toggle.addEventListener('change', () => {
+                updateToggleUI(toggle.checked);
+                detail.style.display = toggle.checked ? 'block' : 'none';
+                document.getElementById('lineNotifyStatus').textContent = toggle.checked ? '有効' : '無効';
+                appState.lineNotifyEnabled = toggle.checked;
+                saveAppState();
+                if (toggle.checked) {
+                    startLineCheckTimer();
+                }
+            });
+
+            function updateToggleUI(checked) {
+                if (checked) {
+                    track.style.background = 'var(--green)';
+                    thumb.style.transform = 'translateX(22px)';
+                } else {
+                    track.style.background = 'var(--border2)';
+                    thumb.style.transform = 'translateX(0)';
+                }
+            }
+
+            // Save button
+            document.getElementById('btnSaveLineSettings').addEventListener('click', () => {
+                appState.lineGasUrl = document.getElementById('lineGasUrl').value.trim();
+                appState.lineManagerUserId = document.getElementById('lineManagerUserId').value.trim();
+                saveAppState();
+                showToast('LINE 通知設定を保存しました', 'success');
+            });
+
+            // Test button
+            document.getElementById('btnTestLineNotify').addEventListener('click', async () => {
+                const gasUrl = document.getElementById('lineGasUrl').value.trim();
+                const managerId = document.getElementById('lineManagerUserId').value.trim();
+
+                if (!gasUrl) {
+                    showToast('GAS Webhook URL を入力してください', 'warning');
+                    return;
+                }
+                if (!managerId) {
+                    showToast('責任者 LINE ユーザーID を入力してください', 'warning');
+                    return;
+                }
+
+                showToast('テスト送信中...', 'info');
+                try {
+                    const res = await sendLineNotification(gasUrl, [{
+                        userId: managerId,
+                        message: '【勤怠管理】テスト通知\nLINE 通知設定が正しく動作しています。'
+                    }]);
+                    if (res.success) {
+                        showToast('テスト送信成功！LINEを確認してください', 'success');
+                    } else {
+                        showToast('送信失敗: ' + (res.error || '不明なエラー'), 'error');
+                    }
+                } catch (err) {
+                    showToast('送信エラー: ' + err.message, 'error');
+                }
+            });
+
+            // GAS template button
+            document.getElementById('btnShowGasTemplate').addEventListener('click', () => {
+                document.getElementById('gasTemplateCode').textContent = GAS_TEMPLATE_CODE;
+                document.getElementById('gasTemplateModal').classList.add('active');
+            });
+
+            document.getElementById('gasTemplateClose').addEventListener('click', () => {
+                document.getElementById('gasTemplateModal').classList.remove('active');
+            });
+
+            document.getElementById('gasTemplateCopy').addEventListener('click', () => {
+                navigator.clipboard.writeText(GAS_TEMPLATE_CODE).then(() => {
+                    showToast('コードをコピーしました', 'success');
+                }).catch(() => {
+                    // Fallback
+                    const textarea = document.createElement('textarea');
+                    textarea.value = GAS_TEMPLATE_CODE;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    showToast('コードをコピーしました', 'success');
+                });
+            });
+
+            // Start timer if enabled
+            if (appState.lineNotifyEnabled) {
+                startLineCheckTimer();
+            }
+        }
+
+        // Send notification via GAS webhook
+        async function sendLineNotification(gasUrl, notifications) {
+            const response = await fetch(gasUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ notifications })
+            });
+            return await response.json();
+        }
+
+        // Check for incomplete attendance and send LINE notifications
+        async function checkAndNotifyIncompleteAttendance(isTest = false) {
+            if (!appState.lineNotifyEnabled && !isTest) return;
+            if (!appState.lineGasUrl) {
+                console.log('LINE notification skipped: no GAS URL configured');
+                return;
+            }
+
+            const today = getLocalDateStr();
+
+            // Prevent duplicate checks on the same day
+            if (!isTest && appState.lastLineCheckDate === today) {
+                console.log('LINE check already done today');
+                return;
+            }
+
+            console.log('Running attendance check for LINE notification...');
+
+            const notifications = [];
+            const incompleteList = [];
+
+            appState.employees.forEach(emp => {
+                const todayEvents = appState.records
+                    .filter(r => r.empId === emp.id && r.date === today)
+                    .sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+                const hasIn = todayEvents.some(e => e.type === 'in');
+                const hasOut = todayEvents.some(e => e.type === 'out');
+
+                if (hasIn && !hasOut) {
+                    // Has check-in but no check-out
+                    const inTime = new Date(todayEvents.find(e => e.type === 'in').ts);
+                    const inTimeStr = `${String(inTime.getHours()).padStart(2, '0')}:${String(inTime.getMinutes()).padStart(2, '0')}`;
+                    incompleteList.push({
+                        emp,
+                        issue: '退勤未打刻',
+                        detail: `出勤 ${inTimeStr} → 退勤なし`
+                    });
+
+                    // Notify the employee if they have a LINE user ID
+                    if (emp.lineUserId) {
+                        notifications.push({
+                            userId: emp.lineUserId,
+                            message: `【勤怠管理】${emp.name}さん\n本日の退勤が未打刻です。\n出勤時刻: ${inTimeStr}\n退勤打刻をお願いします。`
+                        });
+                    }
+                } else if (!hasIn && hasOut) {
+                    // Has check-out but no check-in
+                    const outTime = new Date(todayEvents.find(e => e.type === 'out').ts);
+                    const outTimeStr = `${String(outTime.getHours()).padStart(2, '0')}:${String(outTime.getMinutes()).padStart(2, '0')}`;
+                    incompleteList.push({
+                        emp,
+                        issue: '出勤未打刻',
+                        detail: `出勤なし → 退勤 ${outTimeStr}`
+                    });
+
+                    if (emp.lineUserId) {
+                        notifications.push({
+                            userId: emp.lineUserId,
+                            message: `【勤怠管理】${emp.name}さん\n本日の出勤が未打刻です。\n退勤時刻: ${outTimeStr}\n出勤記録の確認をお願いします。`
+                        });
+                    }
+                }
+                // hasIn && hasOut → OK, skip
+                // !hasIn && !hasOut → Not working today, skip
+            });
+
+            if (incompleteList.length === 0) {
+                console.log('All attendance complete — no notification needed');
+                if (!isTest) {
+                    appState.lastLineCheckDate = today;
+                    saveAppState();
+                }
+                return;
+            }
+
+            // Build manager notification
+            if (appState.lineManagerUserId) {
+                let managerMsg = `【勤怠管理】本日の未完了打刻\n${today}\n\n`;
+                incompleteList.forEach(item => {
+                    managerMsg += `■ ${item.emp.name}（${item.emp.dept}）\n  ${item.issue}: ${item.detail}\n\n`;
+                });
+                managerMsg += '確認をお願いします。';
+
+                notifications.push({
+                    userId: appState.lineManagerUserId,
+                    message: managerMsg
+                });
+            }
+
+            if (notifications.length === 0) {
+                console.log('No LINE user IDs configured — skipping notification');
+                if (!isTest) {
+                    appState.lastLineCheckDate = today;
+                    saveAppState();
+                }
+                return;
+            }
+
+            // Send notifications
+            try {
+                const result = await sendLineNotification(appState.lineGasUrl, notifications);
+                console.log('LINE notification result:', result);
+                if (result.success) {
+                    showToast(`LINE通知を送信しました（${incompleteList.length}名の未完了）`, 'success');
+                } else {
+                    showToast('LINE通知の送信に失敗しました: ' + (result.error || ''), 'error');
+                }
+            } catch (err) {
+                console.error('LINE notification error:', err);
+                showToast('LINE通知エラー: ' + err.message, 'error');
+            }
+
+            if (!isTest) {
+                appState.lastLineCheckDate = today;
+                saveAppState();
+            }
+        }
+
+        // Timer: check every minute, fire at 23:30
+        let lineCheckTimerInterval = null;
+        function startLineCheckTimer() {
+            if (lineCheckTimerInterval) return; // Already running
+
+            console.log('LINE check timer started');
+            lineCheckTimerInterval = setInterval(() => {
+                if (!appState.lineNotifyEnabled) return;
+
+                const now = new Date();
+                const hh = now.getHours();
+                const mm = now.getMinutes();
+
+                if (hh === 23 && mm === 30) {
+                    checkAndNotifyIncompleteAttendance();
+                }
+            }, 60000); // Check every 60 seconds
+        }
+
     </script>
 </body>
 </html>
