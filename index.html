@@ -1508,7 +1508,7 @@
 
                 <div class="settings-section">
                     <div class="settings-title">その他</div>
-                    <button class="btn" style="width: auto; padding: 6px 12px; font-size: 12px; color: var(--ink3); background: transparent; border: 1px solid var(--border); border-radius: 8px;" id="btnReset">データをリセット</button>
+                    <button class="btn" style="width: auto; padding: 6px 12px; font-size: 12px; color: var(--red); background: transparent; border: 1px solid var(--red-border); border-radius: 8px;" id="btnReset">データをリセット</button>
                 </div>
             </div>
         </div>
@@ -1557,7 +1557,22 @@
                     <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">LINE通知に使用。LINE公式アカウントとの友だち追加後に取得できます。</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">プロフィール画像</label>
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                        <div id="customAvatarPreview" style="width: 64px; height: 64px; border-radius: 50%; background: var(--surface2); border: 2px solid var(--border); overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                            <span style="color: var(--ink3); font-size: 24px;">👤</span>
+                        </div>
+                        <div style="flex: 1;">
+                            <input type="file" id="empAvatarFile" accept="image/*" style="display: none;">
+                            <button type="button" class="btn btn-secondary btn-small" id="btnUploadAvatar">画像をアップロード</button>
+                            <button type="button" class="btn btn-small" id="btnRemoveAvatar" style="display: none; margin-left: 4px; font-size: 11px; color: var(--red); background: none; border: none; cursor: pointer;">削除</button>
+                            <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">JPG/PNG。OneDriveに縮小保存されます。</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">アバタースタイル</label>
+                    <div style="font-size: 11px; color: var(--ink3); margin-bottom: 4px;">画像未設定時に使用されます</div>
                     <div class="avatar-style-picker" id="avatarStylePicker"></div>
                     <div class="avatar-preview" id="avatarPreview">
                         <img src="https://api.dicebear.com/9.x/adventurer/svg?seed=user" alt="avatar preview" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22%3E%3Crect fill=%22%23f0f0f0%22 width=%2280%22 height=%2280%22/%3E%3Ctext x=%2240%22 y=%2245%22 text-anchor=%22middle%22 font-size=%2224%22%3E👤%3C/text%3E%3C/svg%3E'">
@@ -1888,6 +1903,24 @@
         window.addEventListener('online', updateOnlineStatus);
         window.addEventListener('offline', updateOnlineStatus);
 
+        // Sync indicator — shows small status in header instead of toast popup
+        function updateSyncIndicator(status) {
+            const dot = document.getElementById('syncDot');
+            const text = document.getElementById('syncText');
+            if (status === 'syncing') {
+                dot.style.background = 'var(--amber)';
+                text.textContent = '同期中...';
+            } else if (status === 'done') {
+                dot.style.background = 'var(--green)';
+                text.textContent = '同期済';
+                setTimeout(() => updateOnlineStatus(), 3000); // Revert after 3s
+            } else if (status === 'error') {
+                dot.style.background = 'var(--red)';
+                text.textContent = '同期エラー';
+                setTimeout(() => updateOnlineStatus(), 5000);
+            }
+        }
+
         // ========== NAVIGATION ==========
         function initNav() {
             document.querySelectorAll('.nav-item').forEach(btn => {
@@ -2127,6 +2160,43 @@
             document.getElementById('empForm').addEventListener('submit', (e) => {
                 e.preventDefault();
                 saveEmployee();
+            });
+
+            // Avatar upload
+            document.getElementById('btnUploadAvatar')?.addEventListener('click', () => {
+                document.getElementById('empAvatarFile').click();
+            });
+            document.getElementById('empAvatarFile')?.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    const dataUrl = await resizeImage(file, 128);
+                    pendingAvatarDataUrl = dataUrl;
+                    const preview = document.getElementById('customAvatarPreview');
+                    if (preview) {
+                        preview.innerHTML = '';
+                        preview.style.backgroundImage = `url(${dataUrl})`;
+                        preview.style.backgroundSize = 'cover';
+                        preview.style.backgroundPosition = 'center';
+                    }
+                    const removeBtn = document.getElementById('btnRemoveAvatar');
+                    if (removeBtn) removeBtn.style.display = 'inline-block';
+                } catch (err) {
+                    console.error('Image resize failed:', err);
+                    showToast('画像の読み込みに失敗しました', 'error');
+                }
+            });
+            document.getElementById('btnRemoveAvatar')?.addEventListener('click', () => {
+                pendingAvatarDataUrl = 'REMOVE';
+                const preview = document.getElementById('customAvatarPreview');
+                if (preview) {
+                    preview.innerHTML = '<span style="font-size:28px;color:var(--text-muted);">👤</span>';
+                    preview.style.backgroundImage = '';
+                }
+                const removeBtn = document.getElementById('btnRemoveAvatar');
+                if (removeBtn) removeBtn.style.display = 'none';
+                const fileInput = document.getElementById('empAvatarFile');
+                if (fileInput) fileInput.value = '';
             });
 
             // Settings
@@ -2426,6 +2496,86 @@
             return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
         }
 
+        // Get the best avatar URL for an employee (custom upload > dicebear)
+        function getEmpAvatarUrl(emp) {
+            if (emp.customAvatarUrl) return emp.customAvatarUrl;
+            return getAvatarUrl(emp.avatarSeed || emp.name, emp.avatarStyle || 'adventurer');
+        }
+
+        // Resize image to max 128x128 and return as data URL
+        function resizeImage(file, maxSize = 128) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+                        else { w = Math.round(w * maxSize / h); h = maxSize; }
+                        canvas.width = w;
+                        canvas.height = h;
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        resolve(canvas.toDataURL('image/jpeg', 0.8));
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Upload avatar image to OneDrive
+        async function uploadAvatarToOneDrive(empId, dataUrl) {
+            const token = await getAccessToken();
+            if (!token) throw new Error('Not authenticated');
+
+            // Convert data URL to blob
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+
+            const fileName = `avatar_${empId}.jpg`;
+            const uploadUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/KumonAttendance/avatars/${fileName}:/content`;
+
+            const uploadRes = await fetch(uploadUrl, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': blob.type
+                },
+                body: blob
+            });
+
+            if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
+
+            const fileData = await uploadRes.json();
+
+            // Create a sharing link to get a public URL
+            const shareRes = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${fileData.id}/createLink`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ type: 'view', scope: 'anonymous' })
+            });
+
+            if (shareRes.ok) {
+                const shareData = await shareRes.json();
+                // Convert sharing URL to direct download URL
+                const shareUrl = shareData.link.webUrl;
+                const base64Url = btoa(shareUrl).replace(/=/g, '').replace(/\//g, '_').replace(/\+/g, '-');
+                return `https://api.onedrive.com/v1.0/shares/u!${base64Url}/root/content`;
+            }
+
+            // Fallback: use the @microsoft.graph.downloadUrl (temporary)
+            return fileData['@microsoft.graph.downloadUrl'] || dataUrl;
+        }
+
+        // Pending custom avatar data URL (set during file selection, used during save)
+        let pendingAvatarDataUrl = null;
+
         // ========== EMPLOYEE MANAGEMENT ==========
         let editingEmployeeId = null;
 
@@ -2436,6 +2586,19 @@
             document.getElementById('empName').focus();
 
             editingEmployeeId = null;
+            pendingAvatarDataUrl = null;
+
+            // Reset custom avatar preview
+            const preview = document.getElementById('customAvatarPreview');
+            if (preview) {
+                preview.innerHTML = '<span style="font-size:28px;color:var(--text-muted);">👤</span>';
+                preview.style.backgroundImage = '';
+            }
+            const removeBtn = document.getElementById('btnRemoveAvatar');
+            if (removeBtn) removeBtn.style.display = 'none';
+            const fileInput = document.getElementById('empAvatarFile');
+            if (fileInput) fileInput.value = '';
+
             populateAvatarPicker();
             document.getElementById('empModal').classList.add('active');
         }
@@ -2501,7 +2664,7 @@
             });
         }
 
-        function saveEmployee() {
+        async function saveEmployee() {
             const name = document.getElementById('empName').value.trim();
             const dept = document.getElementById('empDept').value.trim();
             const styleOpt = document.querySelector('.avatar-style-option.selected');
@@ -2514,10 +2677,11 @@
             }
 
             const lineUserId = document.getElementById('empLineUserId').value.trim();
+            let emp;
 
             if (editingEmployeeId) {
                 // Update existing employee
-                const emp = appState.employees.find(e => e.id === editingEmployeeId);
+                emp = appState.employees.find(e => e.id === editingEmployeeId);
                 if (emp) {
                     emp.name = name;
                     emp.dept = dept;
@@ -2526,14 +2690,10 @@
                     emp.lineUserId = lineUserId || '';
                     // Keep emoji for backward compatibility
                     if (!emp.emoji) emp.emoji = undefined;
-                    saveAppState();
-                    closeEmpModal();
-                    loadAndRender();
-                    showToast(`${name} を更新しました`, 'success');
                 }
             } else {
                 // Create new employee
-                const emp = {
+                emp = {
                     id: 'emp_' + Date.now(),
                     name,
                     dept,
@@ -2543,11 +2703,41 @@
                     isIn: false,
                     checkinTime: null
                 };
-
                 appState.employees.push(emp);
-                saveAppState();
-                closeEmpModal();
-                loadAndRender();
+            }
+
+            if (!emp) return;
+
+            // Handle custom avatar upload/remove
+            if (pendingAvatarDataUrl === 'REMOVE') {
+                emp.customAvatarUrl = '';
+            } else if (pendingAvatarDataUrl) {
+                // Upload to OneDrive if authenticated
+                if (appState.msalAccount && navigator.onLine) {
+                    try {
+                        showToast('アバター画像をアップロード中...', 'info');
+                        const avatarUrl = await uploadAvatarToOneDrive(emp.id, pendingAvatarDataUrl);
+                        emp.customAvatarUrl = avatarUrl;
+                    } catch (err) {
+                        console.error('Avatar upload failed:', err);
+                        // Store data URL as fallback (works locally)
+                        emp.customAvatarUrl = pendingAvatarDataUrl;
+                        showToast('OneDriveへのアップロード失敗。ローカルに保存しました', 'warning');
+                    }
+                } else {
+                    // Not authenticated or offline - store data URL locally
+                    emp.customAvatarUrl = pendingAvatarDataUrl;
+                }
+            }
+
+            pendingAvatarDataUrl = null;
+            saveAppState();
+            closeEmpModal();
+            loadAndRender();
+
+            if (editingEmployeeId) {
+                showToast(`${name} を更新しました`, 'success');
+            } else {
                 showToast(`${name} を追加しました`, 'success');
             }
 
@@ -2562,10 +2752,33 @@
             if (!emp) return;
 
             editingEmployeeId = empId;
+            pendingAvatarDataUrl = null;
             document.getElementById('empModalTitle').textContent = '従業員を編集';
             document.getElementById('empName').value = emp.name;
             document.getElementById('empDept').value = emp.dept;
             document.getElementById('empLineUserId').value = emp.lineUserId || '';
+
+            // Show existing custom avatar if set
+            const preview = document.getElementById('customAvatarPreview');
+            const removeBtn = document.getElementById('btnRemoveAvatar');
+            const fileInput = document.getElementById('empAvatarFile');
+            if (fileInput) fileInput.value = '';
+
+            if (emp.customAvatarUrl) {
+                if (preview) {
+                    preview.innerHTML = '';
+                    preview.style.backgroundImage = `url(${emp.customAvatarUrl})`;
+                    preview.style.backgroundSize = 'cover';
+                    preview.style.backgroundPosition = 'center';
+                }
+                if (removeBtn) removeBtn.style.display = 'inline-block';
+            } else {
+                if (preview) {
+                    preview.innerHTML = '<span style="font-size:28px;color:var(--text-muted);">👤</span>';
+                    preview.style.backgroundImage = '';
+                }
+                if (removeBtn) removeBtn.style.display = 'none';
+            }
 
             populateAvatarPicker();
             const style = emp.avatarStyle || 'adventurer';
@@ -2759,9 +2972,7 @@
                 const status = getEmpStatus(emp.id);
                 const div = document.createElement('div');
                 div.className = 'employee-item' + (emp.id === appState.selectedEmployeeId ? ' selected' : '');
-                const seed = emp.avatarSeed || emp.name;
-                const style = emp.avatarStyle || 'adventurer';
-                const avatarHtml = `<div class="emp-avatar"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
+                const avatarHtml = `<div class="emp-avatar"><img src="${getEmpAvatarUrl(emp)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
                 div.innerHTML = `
                     ${avatarHtml}
                     <div class="emp-name">${emp.name}</div>
@@ -2782,9 +2993,7 @@
             const info = document.getElementById('selectedInfo');
             info.classList.add('active');
             const avatarEl = document.getElementById('selectedAvatar');
-            const seed = emp.avatarSeed || emp.name;
-            const style = emp.avatarStyle || 'adventurer';
-            avatarEl.innerHTML = `<img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+            avatarEl.innerHTML = `<img src="${getEmpAvatarUrl(emp)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
             document.getElementById('selectedName').textContent = emp.name;
             document.getElementById('selectedDept').textContent = emp.dept;
 
@@ -2836,10 +3045,8 @@
                     // Backward compatibility: show emoji if it exists
                     avatarHtml = `<div class="emp-card-emoji">${emp.emoji}</div>`;
                 } else {
-                    // Use avatar image
-                    const seed = emp.avatarSeed || emp.name;
-                    const style = emp.avatarStyle || 'adventurer';
-                    avatarHtml = `<div class="emp-card-emoji"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
+                    // Use avatar image (custom or dicebear)
+                    avatarHtml = `<div class="emp-card-emoji"><img src="${getEmpAvatarUrl(emp)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
                 }
                 card.innerHTML = `
                     ${avatarHtml}
@@ -2959,9 +3166,7 @@
                     }
                 }
 
-                const seed = emp.avatarSeed || emp.name;
-                const style = emp.avatarStyle || 'adventurer';
-                const avatarHtml = `<div class="currently-working-emoji"><img src="${getAvatarUrl(seed, style)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
+                const avatarHtml = `<div class="currently-working-emoji"><img src="${getEmpAvatarUrl(emp)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
 
                 return `
                     <div class="currently-working-item">
@@ -3525,7 +3730,7 @@
             if (!token) return;
 
             isSyncing = true;
-            const syncToast = showToast('同期中...', 'info', 0);
+            updateSyncIndicator('syncing');
 
             try {
                 // ===== STEP 1: READ from Excel =====
@@ -3539,7 +3744,9 @@
                         excelEmps = empRows.slice(1).map(row => ({
                             id: row[0], name: row[1], dept: row[2],
                             avatarStyle: row[3] || 'adventurer',
-                            avatarSeed: row[4] || row[1]
+                            avatarSeed: row[4] || row[1],
+                            lineUserId: row[5] || '',
+                            customAvatarUrl: row[6] || ''
                         })).filter(e => e.id && e.name);
                     }
                 } catch (e) { console.log('Read employees sheet:', e.message); }
@@ -3559,6 +3766,32 @@
                         excelEvents = parseExcelEvents(recRows);
                     }
                 } catch (e) { console.log('Read records sheet:', e.message); }
+
+                // Read shared settings from Excel
+                try {
+                    const settingsRows = await readExcelSheet(appState.excelFileId, '設定');
+                    if (settingsRows.length > 1) {
+                        const settings = {};
+                        settingsRows.slice(1).forEach(row => { if (row[0]) settings[row[0]] = row[1] || ''; });
+                        // Only apply if local values are empty (new device)
+                        if (!appState.lineGasUrl && settings.lineGasUrl) {
+                            appState.lineGasUrl = settings.lineGasUrl;
+                            localStorage.setItem('kumon_lineGasUrl', settings.lineGasUrl);
+                        }
+                        if (!appState.lineManagerUserId && settings.lineManagerUserId) {
+                            appState.lineManagerUserId = settings.lineManagerUserId;
+                            localStorage.setItem('kumon_lineManagerUserId', settings.lineManagerUserId);
+                        }
+                        if (!localStorage.getItem('kumon_lineNotifyTime') && settings.lineNotifyTime) {
+                            appState.lineNotifyTime = settings.lineNotifyTime;
+                            localStorage.setItem('kumon_lineNotifyTime', settings.lineNotifyTime);
+                        }
+                        if (settings.lineNotifyEnabled === 'true' && !appState.lineNotifyEnabled) {
+                            appState.lineNotifyEnabled = true;
+                            localStorage.setItem('kumon_lineNotifyEnabled', 'true');
+                        }
+                    }
+                } catch (e) { console.log('Read settings sheet:', e.message); }
 
                 // ===== STEP 2: MERGE =====
                 const mergedEvents = mergeEvents(appState.records, excelEvents);
@@ -3596,11 +3829,13 @@
                 await writeExcelSheet(appState.excelFileId, '勤怠記録', eventValues);
 
                 const empValues = [
-                    ['ID', '氏名', '部署', 'アバタースタイル', 'アバターシード'],
+                    ['ID', '氏名', '部署', 'アバタースタイル', 'アバターシード', 'LINE_ID', 'アバターURL'],
                     ...mergedEmps.map(e => [
                         e.id, e.name, e.dept,
                         e.avatarStyle || 'adventurer',
-                        e.avatarSeed || e.name
+                        e.avatarSeed || e.name,
+                        e.lineUserId || '',
+                        e.customAvatarUrl || ''
                     ])
                 ];
                 await writeExcelSheet(appState.excelFileId, '従業員', empValues);
@@ -3611,17 +3846,28 @@
                 ];
                 await writeExcelSheet(appState.excelFileId, '拠点', locValues);
 
+                // Write shared LINE settings
+                if (appState.lineGasUrl || appState.lineManagerUserId) {
+                    const settingsValues = [
+                        ['キー', '値'],
+                        ['lineGasUrl', appState.lineGasUrl || ''],
+                        ['lineManagerUserId', appState.lineManagerUserId || ''],
+                        ['lineNotifyTime', appState.lineNotifyTime || '08:00'],
+                        ['lineNotifyEnabled', appState.lineNotifyEnabled ? 'true' : 'false']
+                    ];
+                    await writeExcelSheet(appState.excelFileId, '設定', settingsValues);
+                }
+
                 // ===== STEP 5: Save & render =====
                 appState.lastSyncTime = new Date().toISOString();
                 saveAppState();
                 loadAndRender();
                 updateLocationBadge();
 
-                syncToast?.remove();
+                updateSyncIndicator('done');
                 isSyncing = false;
-                showToast('同期しました', 'success');
             } catch (err) {
-                syncToast?.remove();
+                updateSyncIndicator('error');
                 isSyncing = false;
                 console.error('Sync error:', err);
 
