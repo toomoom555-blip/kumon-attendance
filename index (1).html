@@ -1,0 +1,4319 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>公文式 勤怠管理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        :root {
+            --bg: #FFFFFF;
+            --surface: #FFFFFF;
+            --surface2: #F8F9FA;
+            --border: #E8EAED;
+            --border2: #D1D5DB;
+            --ink: #1A1916;
+            --ink2: #5A574F;
+            --ink3: #9C9890;
+            --green: #2D7A4F;
+            --green-bg: #EBF5EF;
+            --green-border: #B8DFC7;
+            --red: #C0392B;
+            --red-bg: #FDECEA;
+            --red-border: #F5C3BE;
+            --amber: #B7790F;
+            --amber-bg: #FEF6E4;
+            --blue: #2C5F8A;
+            --blue-bg: #EBF2FA;
+            --accent: #3D6B4F;
+            --mono: 'DM Mono', monospace;
+            --font: 'Zen Kaku Gothic New', sans-serif;
+            --radius: 16px;
+            --shadow: 0 2px 12px rgba(26,25,22,0.08), 0 1px 3px rgba(26,25,22,0.05);
+            --shadow-lg: 0 8px 32px rgba(26,25,22,0.12), 0 2px 8px rgba(26,25,22,0.06);
+        }
+
+        html, body {
+            width: 100%;
+            height: 100dvh;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: var(--font);
+            -webkit-overflow-scrolling: touch;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .header-left-icon {
+            font-size: 24px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .location-badge {
+            background: var(--blue-bg);
+            color: var(--blue);
+            border: 1px solid var(--border);
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--ink2);
+        }
+
+        .sync-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--ink3);
+        }
+
+        .sync-dot.online {
+            background: var(--green);
+        }
+
+        .sync-dot.syncing {
+            background: var(--amber);
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-clock {
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--ink2);
+        }
+
+        /* Main Container */
+        .container {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 80px;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 16px;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 0;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 0;
+            height: 80px;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            cursor: pointer;
+            color: var(--ink3);
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border: none;
+            background: none;
+        }
+
+        .nav-item-icon {
+            font-size: 24px;
+        }
+
+        .nav-item.active {
+            color: var(--green);
+        }
+
+        .nav-item.active .nav-item-icon {
+            transform: scale(1.1);
+        }
+
+        /* TAB 1: 打刻 (Scan) */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--ink2);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--green);
+            font-family: var(--mono);
+        }
+
+        .employee-selector {
+            margin-bottom: 20px;
+        }
+
+        .employee-selector-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 12px;
+        }
+
+        .employee-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .employee-item {
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .employee-item:active {
+            transform: scale(0.95);
+        }
+
+        .employee-item.selected {
+            border-color: var(--green);
+            background: var(--green-bg);
+        }
+
+        .emp-avatar {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 8px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .emp-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .emp-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 4px;
+        }
+
+        .emp-status {
+            font-size: 10px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            background: var(--ink3);
+            color: white;
+        }
+
+        .emp-status.in {
+            background: var(--green);
+        }
+
+        .emp-status.out {
+            background: var(--red);
+        }
+
+        .selected-info {
+            background: var(--blue-bg);
+            border: 1px solid var(--blue);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .selected-info.active {
+            display: block;
+        }
+
+        .selected-info-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .selected-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+
+        .selected-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .selected-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .selected-dept {
+            font-size: 12px;
+            color: var(--ink2);
+        }
+
+        .selected-times {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--ink2);
+        }
+
+        .selected-times-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .times-label {
+            font-weight: 600;
+        }
+
+        .times-value {
+            font-family: var(--mono);
+            font-size: 13px;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 12px 16px;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 14px;
+            font-weight: 700;
+            font-family: var(--font);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn-primary {
+            background: var(--green);
+            color: white;
+        }
+
+        .btn-primary:disabled {
+            background: var(--ink3);
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--surface2);
+            color: var(--ink);
+            border: 1px solid var(--border);
+        }
+
+        .btn-danger {
+            background: var(--red);
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--amber);
+            color: white;
+        }
+
+        .btn-small {
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
+        .activity-feed {
+            margin-top: 20px;
+        }
+
+        .activity-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 12px;
+        }
+
+        .feed-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .feed-item {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .feed-emoji {
+            font-size: 32px;
+            flex-shrink: 0;
+        }
+
+        .feed-content {
+            flex: 1;
+        }
+
+        .feed-text {
+            font-size: 13px;
+            color: var(--ink);
+            font-weight: 500;
+        }
+
+        .feed-time {
+            font-size: 11px;
+            color: var(--ink2);
+            font-family: var(--mono);
+            margin-top: 2px;
+        }
+
+        .feed-empty {
+            text-align: center;
+            padding: 24px;
+            color: var(--ink2);
+            font-size: 13px;
+        }
+
+        /* TAB 2: ダッシュ (Dashboard) */
+        .dash-section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .currently-working-item {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .currently-working-emoji {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        .currently-working-emoji img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .currently-working-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .currently-working-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        .currently-working-dept {
+            font-size: 11px;
+            color: var(--ink2);
+        }
+
+        .currently-working-time {
+            font-size: 11px;
+            color: var(--green);
+            font-weight: 600;
+            font-family: var(--mono);
+        }
+
+        .monthly-grid-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+
+        .monthly-grid {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            min-width: 800px;
+        }
+
+        .monthly-grid thead {
+            background: var(--surface2);
+            border-bottom: 2px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .monthly-grid th {
+            padding: 8px;
+            text-align: center;
+            font-weight: 700;
+            color: var(--ink);
+            border-right: 1px solid var(--border);
+        }
+
+        .monthly-grid th:first-child {
+            position: sticky;
+            left: 0;
+            background: var(--surface2);
+            z-index: 2;
+            text-align: left;
+            min-width: 120px;
+        }
+
+        .monthly-grid td {
+            padding: 8px;
+            text-align: center;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            font-family: var(--mono);
+        }
+
+        .monthly-grid td:first-child {
+            position: sticky;
+            left: 0;
+            background: var(--surface);
+            z-index: 1;
+            text-align: left;
+            font-weight: 600;
+            font-family: var(--font);
+        }
+
+        .grid-cell-worked {
+            background: var(--green-bg);
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .grid-cell-empty {
+            background: var(--surface2);
+            color: var(--ink3);
+        }
+
+        .grid-cell-total {
+            background: var(--blue-bg);
+            color: var(--blue);
+            font-weight: 700;
+        }
+
+        /* TAB 3: 従業員 (Employees) */
+        .emp-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .emp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
+        }
+
+        .emp-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .emp-card:active {
+            transform: scale(0.95);
+            box-shadow: var(--shadow);
+        }
+
+        .emp-card-emoji {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 8px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+        }
+
+        .emp-card-emoji img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .emp-card-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 4px;
+        }
+
+        .emp-card-dept {
+            font-size: 11px;
+            color: var(--ink2);
+            margin-bottom: 12px;
+        }
+
+        .emp-mgmt-toolbar {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .no-sel-msg {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--ink2);
+        }
+
+        .no-sel-msg-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .no-sel-msg-text {
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        /* TAB 4: 記録 (Records) */
+        .records-filter {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .filter-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--ink2);
+            text-transform: uppercase;
+        }
+
+        select, input[type="text"], input[type="date"] {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: var(--font);
+            font-size: 13px;
+            color: var(--ink);
+            background: var(--surface);
+        }
+
+        .records-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+            font-size: 12px;
+        }
+
+        .records-table thead {
+            background: var(--surface2);
+            border-bottom: 2px solid var(--border);
+        }
+
+        .records-table th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .records-table td {
+            padding: 12px 8px;
+            border-bottom: 1px solid var(--border);
+            color: var(--ink2);
+            font-family: var(--mono);
+        }
+
+        .records-table tr:hover {
+            background: var(--surface2);
+        }
+
+        /* TAB 5: 設定 (Settings) */
+        .settings-section {
+            margin-bottom: 24px;
+        }
+
+        .settings-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .settings-item {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .settings-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .settings-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        .settings-value {
+            font-size: 11px;
+            color: var(--ink2);
+            font-family: var(--mono);
+        }
+
+        .settings-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: var(--font);
+            font-size: 13px;
+            color: var(--ink);
+            background: var(--surface);
+            margin-bottom: 8px;
+        }
+
+        .location-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .location-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .location-item.current {
+            background: var(--green-bg);
+            border-color: var(--green-border);
+        }
+
+        /* Modals */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(26, 25, 22, 0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 16px;
+        }
+
+        .modal-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ink);
+            text-transform: uppercase;
+        }
+
+        .form-input {
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: var(--font);
+            font-size: 13px;
+            color: var(--ink);
+            background: var(--surface);
+        }
+
+        .form-emoji-picker {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 8px;
+        }
+
+        .avatar-style-picker {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .avatar-style-option {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            padding: 12px;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: var(--surface);
+        }
+
+        .avatar-style-option:active {
+            transform: scale(0.95);
+        }
+
+        .avatar-style-option img {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: var(--surface2);
+        }
+
+        .avatar-style-option-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-align: center;
+            color: var(--ink2);
+        }
+
+        .avatar-style-option.selected {
+            border-color: var(--green);
+            background: var(--green-bg);
+        }
+
+        .avatar-style-option.selected .avatar-style-option-label {
+            color: var(--green);
+            font-weight: 700;
+        }
+
+        .avatar-preview {
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            background: var(--surface2);
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .avatar-preview img {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid var(--green);
+        }
+
+        .emoji-option {
+            font-size: 32px;
+            cursor: pointer;
+            padding: 8px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            text-align: center;
+            transition: all 0.2s ease;
+        }
+
+        .emoji-option.selected {
+            border-color: var(--green);
+            background: var(--green-bg);
+            transform: scale(1.1);
+        }
+
+        .modal-footer {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .modal-footer.single {
+            grid-template-columns: 1fr;
+        }
+
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            box-shadow: var(--shadow-lg);
+            animation: slideIn 0.3s ease-out;
+            pointer-events: auto;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            max-width: 400px;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .toast-message {
+            font-size: 13px;
+            color: var(--ink);
+        }
+
+        .toast.success .toast-icon { color: var(--green); }
+        .toast.success { border-color: var(--green-border); background: var(--green-bg); }
+
+        .toast.error .toast-icon { color: var(--red); }
+        .toast.error { border-color: var(--red-border); background: var(--red-bg); }
+
+        .toast.warning .toast-icon { color: var(--amber); }
+        .toast.warning { border-color: var(--amber); background: var(--amber-bg); }
+
+        .toast.info .toast-icon { color: var(--blue); }
+        .toast.info { border-color: var(--blue); background: var(--blue-bg); }
+
+        /* Setup Wizard */
+        .wizard {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg);
+            z-index: 1001;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .wizard.active {
+            display: flex;
+        }
+
+        .wizard-step {
+            display: none;
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .wizard-step.active {
+            display: block;
+        }
+
+        .wizard-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 12px;
+        }
+
+        .wizard-desc {
+            font-size: 14px;
+            color: var(--ink2);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        .wizard-progress {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .progress-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--border);
+            transition: all 0.3s ease;
+        }
+
+        .progress-dot.active {
+            background: var(--green);
+            transform: scale(1.2);
+        }
+
+        .wizard-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: var(--font);
+            font-size: 13px;
+            color: var(--ink);
+            background: var(--surface);
+            margin-bottom: 12px;
+        }
+
+        .wizard-code {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--ink);
+            margin-bottom: 12px;
+            word-break: break-all;
+        }
+
+        .wizard-footer {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 24px;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .wizard-footer.single {
+            grid-template-columns: 1fr;
+        }
+
+        /* Excel File Option */
+        .excel-file-option {
+            background: var(--surface2);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .excel-file-option:hover {
+            border-color: var(--border2);
+            background: #F0F1F3;
+        }
+
+        .excel-file-option.selected {
+            border-color: var(--green);
+            background: var(--green-bg);
+        }
+
+        .excel-file-option.selected::after {
+            content: '✓';
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 26px;
+            height: 26px;
+            background: var(--green);
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        /* Utility */
+        .hidden {
+            display: none !important;
+        }
+
+        .info-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px;
+            background: var(--surface2);
+            border-radius: 8px;
+        }
+
+        .info-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ink2);
+        }
+
+        .info-value {
+            font-size: 12px;
+            color: var(--ink);
+            font-family: var(--mono);
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="header-left">
+            <span class="header-left-icon">📋</span>
+            <span>公文式 勤怠管理</span>
+        </div>
+        <div class="header-right">
+            <div class="location-badge" id="locationBadge">選択なし</div>
+            <div class="sync-status">
+                <div class="sync-dot" id="syncDot"></div>
+                <span id="syncText">オフライン</span>
+            </div>
+            <div class="header-clock" id="headerClock">00:00</div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <div class="content-area">
+            <!-- TAB 1: 打刻 -->
+            <div class="tab-content active" id="tab-scan">
+                <div class="stat-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">出勤中</div>
+                        <div class="stat-value" id="statCheckIn">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">本日打刻</div>
+                        <div class="stat-value" id="statStamps">0</div>
+                    </div>
+                </div>
+
+                <div class="employee-selector">
+                    <div class="employee-selector-title">従業員を選択</div>
+                    <div class="employee-grid" id="scanEmployeeGrid"></div>
+                </div>
+
+                <div class="selected-info" id="selectedInfo">
+                    <div class="selected-info-header">
+                        <div class="selected-avatar" id="selectedAvatar">👤</div>
+                        <div>
+                            <div class="selected-name" id="selectedName">名前</div>
+                            <div class="selected-dept" id="selectedDept">部署</div>
+                        </div>
+                    </div>
+                    <div class="selected-times">
+                        <div class="selected-times-row">
+                            <span class="times-label">本日出勤:</span>
+                            <span class="times-value" id="todayCheckIn">--:--</span>
+                        </div>
+                        <div class="selected-times-row">
+                            <span class="times-label">本日退勤:</span>
+                            <span class="times-value" id="todayCheckOut">--:--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn btn-primary" id="btnCheckIn">出勤</button>
+                    <button class="btn btn-warning" id="btnCheckOut">退勤</button>
+                </div>
+
+                <div class="activity-feed">
+                    <div class="activity-title">本日の打刻</div>
+                    <div class="feed-list" id="activityFeed"></div>
+                </div>
+            </div>
+
+            <!-- TAB 2: ダッシュ -->
+            <div class="tab-content" id="tab-dash">
+                <div class="dash-section">
+                    <div class="section-title">現在出勤中</div>
+                    <div id="currentlyWorking"></div>
+                </div>
+                <div class="dash-section">
+                    <div class="section-title">月次勤怠一覧</div>
+                    <div id="monthlyGrid" class="monthly-grid-wrapper"></div>
+                </div>
+            </div>
+
+            <!-- TAB 3: 従業員 -->
+            <div class="tab-content" id="tab-emp">
+                <div class="emp-header">
+                    <div style="font-size: 16px; font-weight: 700;">従業員管理</div>
+                    <button class="btn btn-primary btn-small" id="btnAddEmp">＋ 追加</button>
+                </div>
+                <div class="emp-grid" id="empGrid"></div>
+                <div class="no-sel-msg" id="noEmpMsg" style="display: none;">
+                    <div class="no-sel-msg-icon">👥</div>
+                    <div class="no-sel-msg-text">従業員を追加してください</div>
+                </div>
+            </div>
+
+            <!-- TAB 4: 記録 -->
+            <div class="tab-content" id="tab-records">
+                <div class="records-filter">
+                    <div class="filter-group">
+                        <label class="filter-label">従業員</label>
+                        <select id="recordsFilterEmp">
+                            <option value="">すべて</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">拠点</label>
+                        <select id="recordsFilterLoc">
+                            <option value="">すべて</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-secondary btn-small" id="btnExportCSV">CSV エクスポート</button>
+                <table class="records-table">
+                    <thead>
+                        <tr>
+                            <th>日付</th>
+                            <th>時刻</th>
+                            <th>種別</th>
+                            <th>氏名</th>
+                            <th>拠点</th>
+                            <th>端末</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordsTableBody"></tbody>
+                </table>
+            </div>
+
+            <!-- TAB 5: 設定 -->
+            <div class="tab-content" id="tab-settings">
+                <div class="settings-section">
+                    <div class="settings-title">OneDrive 連携</div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label" id="authStatus">未認証</div>
+                            <div class="settings-value">Microsoft アカウント</div>
+                        </div>
+                        <button class="btn btn-primary btn-small" id="btnAuth">ログイン</button>
+                    </div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label">Excel ファイル</div>
+                            <div class="settings-value" id="excelFileInfo">なし</div>
+                        </div>
+                        <button class="btn btn-secondary btn-small" id="btnSelectExcel">変更</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-title">拠点管理</div>
+                    <div class="location-list" id="locationList"></div>
+                    <div style="display: flex; gap: 12px; margin-top: 12px;">
+                        <input type="text" class="settings-input" placeholder="新しい拠点名" id="locInput" style="margin-bottom: 0; flex: 1;">
+                        <button class="btn btn-primary btn-small" id="btnAddLoc">追加</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-title">データ同期</div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label">最終同期</div>
+                            <div class="settings-value" id="lastSyncTime">未実施</div>
+                        </div>
+                        <button class="btn btn-primary btn-small" id="btnManualSync">同期</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-title">デバイス設定</div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label">このデバイスの名前</div>
+                            <div class="settings-value" id="deviceNameDisplay">未設定</div>
+                        </div>
+                        <button class="btn btn-secondary btn-small" id="btnChangeDevice">変更</button>
+                    </div>
+                    <div class="settings-desc" style="font-size: 12px; color: var(--ink2); margin-top: 8px; padding: 8px; background: var(--surface2); border-radius: 8px;">
+                        このデバイス名は Excelレコードに記録され、どの端末から打刻したかを追跡できます。
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-title">LINE 通知設定</div>
+                    <div class="settings-desc" style="font-size: 12px; color: var(--ink2); margin-bottom: 12px; padding: 8px; background: var(--surface2); border-radius: 8px;">
+                        毎日 23:30 に出退勤が揃っていない従業員を検出し、LINE で通知します。<br>
+                        Google Apps Script を中継サーバーとして使用します。
+                    </div>
+                    <div class="settings-item">
+                        <div class="settings-info">
+                            <div class="settings-label">LINE 通知</div>
+                            <div class="settings-value" id="lineNotifyStatus">無効</div>
+                        </div>
+                        <label style="position: relative; display: inline-block; width: 48px; height: 26px; cursor: pointer;">
+                            <input type="checkbox" id="lineNotifyToggle" style="opacity: 0; width: 0; height: 0;">
+                            <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--border2); border-radius: 13px; transition: 0.3s;" id="lineToggleTrack"></span>
+                            <span style="position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; background: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);" id="lineToggleThumb"></span>
+                        </label>
+                    </div>
+                    <div id="lineSettingsDetail" style="display: none;">
+                        <div class="settings-item" style="margin-top: 12px;">
+                            <div class="settings-info" style="flex: 1;">
+                                <div class="settings-label">GAS Webhook URL</div>
+                                <input type="url" class="form-input" id="lineGasUrl" placeholder="https://script.google.com/macros/s/xxx/exec" style="margin-top: 4px; font-size: 12px;">
+                            </div>
+                        </div>
+                        <div class="settings-item" style="margin-top: 8px;">
+                            <div class="settings-info" style="flex: 1;">
+                                <div class="settings-label">責任者 LINE ユーザーID</div>
+                                <input type="text" class="form-input" id="lineManagerUserId" placeholder="Uxxxxxxxxxxxxx" style="margin-top: 4px; font-size: 12px;">
+                            </div>
+                        </div>
+                        <div class="settings-item" style="margin-top: 8px;">
+                            <div class="settings-info" style="flex: 1;">
+                                <div class="settings-label">通知時刻</div>
+                                <select class="form-input" id="lineNotifyTime" style="margin-top: 4px; font-size: 12px;">
+                                    <option value="07:00">7:00</option>
+                                    <option value="07:30">7:30</option>
+                                    <option value="08:00" selected>8:00</option>
+                                    <option value="08:30">8:30</option>
+                                    <option value="09:00">9:00</option>
+                                    <option value="09:30">9:30</option>
+                                    <option value="10:00">10:00</option>
+                                    <option value="10:30">10:30</option>
+                                    <option value="11:00">11:00</option>
+                                    <option value="11:30">11:30</option>
+                                    <option value="12:00">12:00</option>
+                                </select>
+                                <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">前日の未打刻を翌朝チェックして通知します。ブラウザが開いている必要があります。</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 12px;">
+                            <button class="btn btn-primary btn-small" id="btnSaveLineSettings">保存</button>
+                            <button class="btn btn-secondary btn-small" id="btnTestLineNotify">テスト送信</button>
+                            <button class="btn btn-secondary btn-small" id="btnShowGasTemplate">GAS テンプレート</button>
+                        </div>
+                        <div style="font-size: 11px; color: var(--ink3); margin-top: 8px;">
+                            従業員の LINE ユーザーIDは「従業員」タブの編集画面で設定できます。
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-title">その他</div>
+                    <button class="btn" style="width: auto; padding: 6px 12px; font-size: 12px; color: var(--red); background: transparent; border: 1px solid var(--red-border); border-radius: 8px;" id="btnReset">データをリセット</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+        <button class="nav-item active" data-tab="scan">
+            <div class="nav-item-icon">📋</div>
+            <div>打刻</div>
+        </button>
+        <button class="nav-item" data-tab="dash">
+            <div class="nav-item-icon">📊</div>
+            <div>ダッシュ</div>
+        </button>
+        <button class="nav-item" data-tab="emp">
+            <div class="nav-item-icon">👥</div>
+            <div>従業員</div>
+        </button>
+        <button class="nav-item" data-tab="records">
+            <div class="nav-item-icon">📝</div>
+            <div>記録</div>
+        </button>
+        <button class="nav-item" data-tab="settings">
+            <div class="nav-item-icon">⚙️</div>
+            <div>設定</div>
+        </button>
+    </nav>
+
+    <!-- Modals -->
+    <div class="modal" id="empModal">
+        <div class="modal-content">
+            <div class="modal-title" id="empModalTitle">従業員を追加</div>
+            <form class="modal-form" id="empForm">
+                <div class="form-group">
+                    <label class="form-label">名前</label>
+                    <input type="text" class="form-input" id="empName" placeholder="例: 田中太郎" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">部署</label>
+                    <input type="text" class="form-input" id="empDept" placeholder="例: 営業部" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">LINE ユーザーID</label>
+                    <input type="text" class="form-input" id="empLineUserId" placeholder="例: Uxxxxxxxxxxxxx（任意）">
+                    <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">LINE通知に使用。LINE公式アカウントとの友だち追加後に取得できます。</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">プロフィール画像</label>
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                        <div id="customAvatarPreview" style="width: 64px; height: 64px; border-radius: 50%; background: var(--surface2); border: 2px solid var(--border); overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                            <span style="color: var(--ink3); font-size: 24px;">👤</span>
+                        </div>
+                        <div style="flex: 1;">
+                            <input type="file" id="empAvatarFile" accept="image/*" style="display: none;">
+                            <button type="button" class="btn btn-secondary btn-small" id="btnUploadAvatar">画像をアップロード</button>
+                            <button type="button" class="btn btn-small" id="btnRemoveAvatar" style="display: none; margin-left: 4px; font-size: 11px; color: var(--red); background: none; border: none; cursor: pointer;">削除</button>
+                            <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">JPG/PNG。OneDriveに縮小保存されます。</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">アバタースタイル</label>
+                    <div style="font-size: 11px; color: var(--ink3); margin-bottom: 4px;">画像未設定時に使用されます</div>
+                    <div class="avatar-style-picker" id="avatarStylePicker"></div>
+                    <div class="avatar-preview" id="avatarPreview">
+                        <img src="https://api.dicebear.com/9.x/adventurer/svg?seed=user" alt="avatar preview" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22%3E%3Crect fill=%22%23f0f0f0%22 width=%2280%22 height=%2280%22/%3E%3Ctext x=%2240%22 y=%2245%22 text-anchor=%22middle%22 font-size=%2224%22%3E👤%3C/text%3E%3C/svg%3E'">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="empModalCancel">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+
+
+    <!-- Device Modal -->
+    <div class="modal" id="deviceModal">
+        <div class="modal-content">
+            <div class="modal-title">デバイス名を設定</div>
+            <div style="color: var(--ink2); margin-bottom: 16px; font-size: 14px;">
+                このデバイスの名前を設定してください。Excelレコードに記録され、どの端末から打刻したかを追跡できます。
+            </div>
+            <div class="form-group">
+                <label class="form-label">デバイス名</label>
+                <input type="text" class="form-input" id="deviceNameInput" placeholder="例: iPad田中, iPhone太郎">
+                <div style="font-size: 12px; color: var(--ink2); margin-top: 8px;">
+                    自動検出: <span id="autoDeviceDetect" style="font-weight: 600;"></span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="deviceModalCancel">キャンセル</button>
+                <button class="btn btn-primary" id="deviceModalSave">保存</button>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <div class="modal" id="confirmModal">
+        <div class="modal-content" style="text-align: center;">
+            <div class="modal-title" id="confirmTitle">確認</div>
+            <div style="color: var(--ink2); margin-bottom: 20px;" id="confirmMessage"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="confirmCancel">キャンセル</button>
+                <button class="btn btn-primary" id="confirmOk">確認</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="editRecordModal">
+        <div class="modal-content">
+            <div class="modal-title">勤務時間を修正</div>
+            <div id="editRecordInfo" style="color: var(--ink2); margin-bottom: 16px;"></div>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label">日付</label>
+                <input type="date" id="editRecordDate" class="form-input">
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label">時刻</label>
+                <input type="time" id="editRecordTime" class="form-input" step="60">
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label">種別</label>
+                <select id="editRecordType" class="form-input">
+                    <option value="in">出勤</option>
+                    <option value="out">退勤</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" id="editRecordDelete" style="margin-right: auto;">削除</button>
+                <button class="btn btn-secondary" id="editRecordCancel">キャンセル</button>
+                <button class="btn btn-primary" id="editRecordSave">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="gasTemplateModal">
+        <div class="modal-content" style="max-height: 80vh; overflow-y: auto;">
+            <div class="modal-title">Google Apps Script テンプレート</div>
+            <div style="color: var(--ink2); margin-bottom: 12px; font-size: 13px;">
+                以下のコードを Google Apps Script にコピーして「ウェブアプリ」としてデプロイしてください。
+            </div>
+            <div style="margin-bottom: 12px;">
+                <strong style="font-size: 13px;">手順:</strong>
+                <ol style="font-size: 12px; color: var(--ink2); margin: 8px 0; padding-left: 20px;">
+                    <li><a href="https://script.google.com" target="_blank" style="color: var(--blue);">script.google.com</a> → 新しいプロジェクト</li>
+                    <li>下のコードをコピーして貼り付け</li>
+                    <li>LINE_CHANNEL_ACCESS_TOKEN を設定</li>
+                    <li>「デプロイ」→「新しいデプロイ」→ 種類:「ウェブアプリ」</li>
+                    <li>「アクセスできるユーザー」を「全員」に設定</li>
+                    <li>デプロイURLをこのアプリの設定に貼り付け</li>
+                </ol>
+            </div>
+            <pre id="gasTemplateCode" style="background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 11px; font-family: var(--mono); overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; user-select: text; -webkit-user-select: text;"></pre>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="gasTemplateClose">閉じる</button>
+                <button class="btn btn-primary" id="gasTemplateCopy">コピー</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="excelModal">
+        <div class="modal-content">
+            <div class="modal-title">Excel ファイルを選択</div>
+            <div id="excelFileListSettings" style="margin-bottom: 16px;"></div>
+            <div style="margin-bottom: 16px; padding: 12px; background: var(--amber-bg); border-radius: 8px; font-size: 13px; color: var(--amber);">
+                ファイルが表示されない場合は、<a href="https://onedrive.live.com" target="_blank" style="color: var(--blue); font-weight: 600;">OneDrive</a> で
+                「新規 → Excel ブック」から作成してから、<button id="excelRefreshBtn" style="background:none;border:none;color:var(--blue);font-weight:600;cursor:pointer;font-size:13px;text-decoration:underline;">再読み込み</button>してください。
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="excelModalCancel">キャンセル</button>
+                <button class="btn btn-primary" id="excelModalSave">設定</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="setupWizard">
+        <div class="wizard" id="wizard">
+            <div class="wizard-step active" id="wizardStep1">
+                <div class="wizard-title">セットアップ</div>
+                <div class="wizard-progress">
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot"></div>
+                    <div class="progress-dot"></div>
+                    <div class="progress-dot"></div>
+                </div>
+                <div class="wizard-desc">
+                    Azure AD アプリケーションを設定してください。<br>
+                    <a href="https://portal.azure.com" target="_blank" style="color: var(--blue);">Azure Portal</a> で以下の設定を行ってください:
+                    <br><br>
+                    1. アプリケーション登録を作成<br>
+                    2. リダイレクト URI を設定:<br>
+                </div>
+                <div class="wizard-code" id="redirectUri">http://localhost:8080</div>
+                <div class="wizard-desc">3. アプリケーション ID をコピー</div>
+                <input type="text" class="wizard-input" id="clientId" placeholder="クライアント ID を貼り付け">
+                <div class="wizard-footer single">
+                    <button class="btn btn-primary" id="wizardStep1Next">次へ</button>
+                </div>
+                <div style="margin-top: 16px; text-align: center; border-top: 1px solid var(--border); padding-top: 16px;">
+                    <button class="btn btn-secondary" id="wizardSkipBtn" style="font-size: 14px; color: var(--ink2);">OneDrive なしで試す（オフラインモード）</button>
+                </div>
+            </div>
+
+            <div class="wizard-step" id="wizardStep2">
+                <div class="wizard-title">Microsoft ログイン</div>
+                <div class="wizard-progress">
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot"></div>
+                    <div class="progress-dot"></div>
+                </div>
+                <div class="wizard-desc">Microsoft アカウントでログインしてください</div>
+                <div class="wizard-footer single">
+                    <button class="btn btn-primary" id="wizardStep2Login">ログイン</button>
+                </div>
+            </div>
+
+            <div class="wizard-step" id="wizardStep3">
+                <div class="wizard-title">Excel ファイル</div>
+                <div class="wizard-progress">
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot"></div>
+                </div>
+                <div class="wizard-desc">OneDrive の Excel ファイルを選択または作成してください</div>
+                <div id="excelFileList"></div>
+                <input type="text" class="wizard-input" id="newExcelName" placeholder="新しいファイル名 (例: 勤怠管理.xlsx)">
+                <div class="wizard-footer">
+                    <button class="btn btn-secondary" id="wizardStep3Back">戻る</button>
+                    <button class="btn btn-primary" id="wizardStep3Next">次へ</button>
+                </div>
+            </div>
+
+            <div class="wizard-step" id="wizardStep4">
+                <div class="wizard-title">拠点設定</div>
+                <div class="wizard-progress">
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                    <div class="progress-dot active"></div>
+                </div>
+                <div class="wizard-desc">このデバイスの拠点名を設定してください</div>
+                <input type="text" class="wizard-input" id="locName" placeholder="例: 本社, 支店A">
+                <div class="wizard-footer">
+                    <button class="btn btn-secondary" id="wizardStep4Back">戻る</button>
+                    <button class="btn btn-primary" id="wizardStep4Finish">完了</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script>
+        // ========== CONFIG & STATE ==========
+        const CONFIG = {
+            msalInstance: null,
+            clientId: localStorage.getItem('kumon_clientId') || null,
+            authority: 'https://login.microsoftonline.com/common',
+            redirectUri: window.location.origin && window.location.origin !== 'null' ? window.location.origin : 'http://localhost:8080',
+            scopes: ['Files.ReadWrite']
+        };
+
+        let appState = {
+            locations: JSON.parse(localStorage.getItem('kumon_locations')) || [],
+            employees: JSON.parse(localStorage.getItem('kumon_employees')) || [],
+            records: JSON.parse(localStorage.getItem('kumon_records')) || [],
+            currentLocationId: localStorage.getItem('kumon_currentLocationId') || null,
+            lastSyncTime: localStorage.getItem('kumon_lastSyncTime') || null,
+            excelFileId: localStorage.getItem('kumon_excelFileId') || null,
+            excelFileName: localStorage.getItem('kumon_excelFileName') || null,
+            deviceName: localStorage.getItem('kumon_deviceName') || null,
+            selectedEmployeeId: null,
+            lineNotifyEnabled: localStorage.getItem('kumon_lineNotifyEnabled') === 'true',
+            lineGasUrl: localStorage.getItem('kumon_lineGasUrl') || '',
+            lineManagerUserId: localStorage.getItem('kumon_lineManagerUserId') || '',
+            lastLineCheckDate: localStorage.getItem('kumon_lastLineCheckDate') || '',
+            lineNotifyTime: localStorage.getItem('kumon_lineNotifyTime') || '23:30'
+        };
+
+        // ========== HELPER: Get local (JST) date string ==========
+        function getLocalDateStr(date) {
+            const d = date || new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        // ========== MIGRATION: old paired records → new event records ==========
+        function migrateRecords() {
+            if (appState.records.length === 0) return;
+
+            // Check if first record is old format (has inTs but no type)
+            const first = appState.records[0];
+            if (first.type === 'in' || first.type === 'out') return; // Already new format
+
+            console.log('Migrating', appState.records.length, 'old records to event format...');
+            const events = [];
+            appState.records.forEach(r => {
+                if (r.inTs) {
+                    events.push({
+                        ts: r.inTs,
+                        date: r.date || r.inTs.split('T')[0],
+                        empId: r.empId,
+                        empName: r.empName,
+                        empDept: r.empDept,
+                        location: r.location || '未設定',
+                        type: 'in'
+                    });
+                }
+                if (r.outTs) {
+                    events.push({
+                        ts: r.outTs,
+                        date: r.date || r.outTs.split('T')[0],
+                        empId: r.empId,
+                        empName: r.empName,
+                        empDept: r.empDept,
+                        location: r.location || '未設定',
+                        type: 'out'
+                    });
+                }
+            });
+            events.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+            appState.records = events;
+            saveAppState();
+            console.log('Migration complete:', events.length, 'events');
+        }
+
+        // ========== INITIALIZATION ==========
+        window.addEventListener('DOMContentLoaded', () => {
+            migrateRecords();
+            initHeader();
+            initNav();
+            initEventListeners();
+            updateOnlineStatus();
+            startClock();
+
+            if (!CONFIG.clientId) {
+                showSetupWizard();
+            } else {
+                initMSAL();
+                loadAndRender();
+                initLineNotifySettings();
+                // Load data from OneDrive in background
+                syncFromExcel().catch(err => console.log('Initial sync from Excel skipped:', err));
+            }
+        });
+
+        // ========== HEADER & CLOCK ==========
+        function initHeader() {
+            updateLocationBadge();
+            setInterval(updateLocationBadge, 30000);
+        }
+
+        function updateLocationBadge() {
+            const badge = document.getElementById('locationBadge');
+            if (appState.currentLocationId) {
+                const loc = appState.locations.find(l => l.id === appState.currentLocationId);
+                badge.textContent = loc?.name || '選択なし';
+            } else {
+                badge.textContent = '選択なし';
+            }
+        }
+
+        function startClock() {
+            function update() {
+                const now = new Date();
+                const hh = String(now.getHours()).padStart(2, '0');
+                const mm = String(now.getMinutes()).padStart(2, '0');
+                document.getElementById('headerClock').textContent = `${hh}:${mm}`;
+            }
+            update();
+            setInterval(update, 10000);
+        }
+
+        // ========== ONLINE/OFFLINE ==========
+        function updateOnlineStatus() {
+            const dot = document.getElementById('syncDot');
+            const text = document.getElementById('syncText');
+            if (navigator.onLine) {
+                dot.className = 'sync-dot online';
+                text.textContent = 'オンライン';
+            } else {
+                dot.className = 'sync-dot';
+                text.textContent = 'オフライン';
+            }
+        }
+
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+
+        // Sync indicator — shows small status in header instead of toast popup
+        function updateSyncIndicator(status) {
+            const dot = document.getElementById('syncDot');
+            const text = document.getElementById('syncText');
+            if (status === 'syncing') {
+                dot.style.background = 'var(--amber)';
+                text.textContent = '同期中...';
+            } else if (status === 'done') {
+                dot.style.background = 'var(--green)';
+                text.textContent = '同期済';
+                setTimeout(() => updateOnlineStatus(), 3000); // Revert after 3s
+            } else if (status === 'error') {
+                dot.style.background = 'var(--red)';
+                text.textContent = '同期エラー';
+                setTimeout(() => updateOnlineStatus(), 5000);
+            }
+        }
+
+        // ========== NAVIGATION ==========
+        function initNav() {
+            document.querySelectorAll('.nav-item').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const tabName = btn.dataset.tab;
+                    switchTab(tabName);
+                });
+            });
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
+
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+            if (tabName === 'dash') {
+                renderCurrentlyWorking();
+                renderMonthlyGrid();
+            }
+            if (tabName === 'records') renderRecords();
+            if (tabName === 'settings') renderSettings();
+        }
+
+        // ========== TOAST NOTIFICATIONS ==========
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <div class="toast-icon">${type === 'success' ? '✓' : type === 'error' ? '✕' : type === 'warning' ? '⚠' : 'ℹ'}</div>
+                <div class="toast-message">${message}</div>
+            `;
+            container.appendChild(toast);
+
+            if (duration > 0) {
+                setTimeout(() => toast.remove(), duration);
+            }
+
+            return toast;
+        }
+
+        // ========== CONFIRMATION MODAL ==========
+        function showConfirm(title, message) {
+            return new Promise((resolve) => {
+                document.getElementById('confirmTitle').textContent = title;
+                document.getElementById('confirmMessage').textContent = message;
+                const modal = document.getElementById('confirmModal');
+                modal.classList.add('active');
+
+                const cleanup = () => {
+                    modal.classList.remove('active');
+                    document.getElementById('confirmOk').removeEventListener('click', onOk);
+                    document.getElementById('confirmCancel').removeEventListener('click', onCancel);
+                };
+
+                const onOk = () => {
+                    cleanup();
+                    resolve(true);
+                };
+
+                const onCancel = () => {
+                    cleanup();
+                    resolve(false);
+                };
+
+                document.getElementById('confirmOk').addEventListener('click', onOk);
+                document.getElementById('confirmCancel').addEventListener('click', onCancel);
+            });
+        }
+
+        // ========== MICROSOFT GRAPH API ==========
+        function initMSAL() {
+            if (!CONFIG.clientId) return;
+
+            const msalConfig = {
+                auth: {
+                    clientId: CONFIG.clientId,
+                    authority: CONFIG.authority,
+                    redirectUri: CONFIG.redirectUri
+                },
+                cache: {
+                    cacheLocation: 'localStorage'
+                }
+            };
+
+            CONFIG.msalInstance = new msal.PublicClientApplication(msalConfig);
+        }
+
+        async function getAccessToken() {
+            if (!CONFIG.msalInstance) return null;
+
+            const accounts = CONFIG.msalInstance.getAllAccounts();
+            if (accounts.length === 0) return null;
+
+            try {
+                const result = await CONFIG.msalInstance.acquireTokenSilent({
+                    scopes: CONFIG.scopes,
+                    account: accounts[0]
+                });
+                return result.accessToken;
+            } catch (e) {
+                try {
+                    const result = await CONFIG.msalInstance.acquireTokenPopup({
+                        scopes: CONFIG.scopes
+                    });
+                    return result.accessToken;
+                } catch (err) {
+                    console.error('Token acquisition failed', err);
+                    return null;
+                }
+            }
+        }
+
+        async function graphRequest(url, method = 'GET', body = null) {
+            const token = await getAccessToken();
+            if (!token) throw new Error('Not authenticated');
+
+            const opts = {
+                method,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+
+            if (body) opts.body = JSON.stringify(body);
+
+            const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, opts);
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Graph API error: ${res.status} - ${errText}`);
+            }
+
+            if (method === 'DELETE') return null;
+
+            const text = await res.text();
+            return text ? JSON.parse(text) : null;
+        }
+
+        async function listExcelFiles() {
+            try {
+                const allFiles = new Map();
+
+                // Method 1: Search entire OneDrive
+                try {
+                    const searchData = await graphRequest("/me/drive/root/search(q='.xlsx')?$top=50&$select=id,name,parentReference,file");
+                    (searchData.value || []).forEach(f => {
+                        if (f.name.endsWith('.xlsx')) allFiles.set(f.id, f);
+                    });
+                } catch (e) { console.log('Search failed, trying fallback', e); }
+
+                // Method 2: List root children (fallback/supplement)
+                try {
+                    const rootData = await graphRequest("/me/drive/root/children?$select=id,name,parentReference,file&$top=100");
+                    (rootData.value || []).forEach(f => {
+                        if (f.file && f.name.endsWith('.xlsx')) allFiles.set(f.id, f);
+                    });
+                } catch (e) { console.log('Root listing failed', e); }
+
+                // Method 3: Check Documents folder
+                try {
+                    const docsData = await graphRequest("/me/drive/root:/Documents:/children?$select=id,name,parentReference,file&$top=100");
+                    (docsData.value || []).forEach(f => {
+                        if (f.file && f.name.endsWith('.xlsx')) allFiles.set(f.id, f);
+                    });
+                } catch (e) { /* Documents folder may not exist */ }
+
+                return Array.from(allFiles.values());
+            } catch (err) {
+                console.error('Failed to list Excel files', err);
+                return [];
+            }
+        }
+
+        async function readExcelSheet(fileId, sheetName) {
+            try {
+                const data = await graphRequest(`/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`);
+                return data.values || [];
+            } catch (err) {
+                console.error('Failed to read Excel sheet', err);
+                return [];
+            }
+        }
+
+        async function writeExcelSheet(fileId, sheetName, values) {
+            try {
+                // Ensure sheet exists
+                try {
+                    await graphRequest(`/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')`);
+                } catch {
+                    await graphRequest(`/me/drive/items/${fileId}/workbook/worksheets/add`, 'POST', { name: sheetName });
+                }
+
+                if (values.length === 0) return;
+
+                // Clear existing data
+                try {
+                    const range = await graphRequest(`/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`);
+                    if (range.address) {
+                        await graphRequest(
+                            `/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')/range(address='${range.address}')/clear`,
+                            'POST',
+                            { applyTo: 'All' }
+                        );
+                    }
+                } catch {}
+
+                // Write new data
+                const rows = values.length;
+                const cols = values[0].length;
+                const endCol = String.fromCharCode(64 + cols);
+                const address = `A1:${endCol}${rows}`;
+
+                await graphRequest(
+                    `/me/drive/items/${fileId}/workbook/worksheets('${encodeURIComponent(sheetName)}')/range(address='${address}')`,
+                    'PATCH',
+                    { values }
+                );
+            } catch (err) {
+                console.error('Failed to write Excel sheet', err);
+                throw err;
+            }
+        }
+
+        // ========== EVENT LISTENERS ==========
+        function initEventListeners() {
+            // Scan Tab
+            document.getElementById('btnCheckIn').addEventListener('click', () => checkInEmployee('in'));
+            document.getElementById('btnCheckOut').addEventListener('click', () => checkInEmployee('out'));
+            document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
+
+            // Employee Management
+            document.getElementById('btnAddEmp').addEventListener('click', () => openEmpModal());
+            document.getElementById('empModalCancel').addEventListener('click', () => closeEmpModal());
+            document.getElementById('empForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                saveEmployee();
+            });
+
+            // Avatar upload
+            document.getElementById('btnUploadAvatar')?.addEventListener('click', () => {
+                document.getElementById('empAvatarFile').click();
+            });
+            document.getElementById('empAvatarFile')?.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    const dataUrl = await resizeImage(file, 128);
+                    pendingAvatarDataUrl = dataUrl;
+                    const preview = document.getElementById('customAvatarPreview');
+                    if (preview) {
+                        preview.innerHTML = '';
+                        preview.style.backgroundImage = `url(${dataUrl})`;
+                        preview.style.backgroundSize = 'cover';
+                        preview.style.backgroundPosition = 'center';
+                    }
+                    const removeBtn = document.getElementById('btnRemoveAvatar');
+                    if (removeBtn) removeBtn.style.display = 'inline-block';
+                } catch (err) {
+                    console.error('Image resize failed:', err);
+                    showToast('画像の読み込みに失敗しました', 'error');
+                }
+            });
+            document.getElementById('btnRemoveAvatar')?.addEventListener('click', () => {
+                pendingAvatarDataUrl = 'REMOVE';
+                const preview = document.getElementById('customAvatarPreview');
+                if (preview) {
+                    preview.innerHTML = '<span style="font-size:28px;color:var(--text-muted);">👤</span>';
+                    preview.style.backgroundImage = '';
+                }
+                const removeBtn = document.getElementById('btnRemoveAvatar');
+                if (removeBtn) removeBtn.style.display = 'none';
+                const fileInput = document.getElementById('empAvatarFile');
+                if (fileInput) fileInput.value = '';
+            });
+
+            // Settings
+            document.getElementById('btnAuth').addEventListener('click', handleMicrosoftLogin);
+            document.getElementById('btnSelectExcel').addEventListener('click', selectExcelFile);
+            document.getElementById('excelModalCancel').addEventListener('click', () => {
+                document.getElementById('excelModal').classList.remove('active');
+            });
+            document.getElementById('excelRefreshBtn')?.addEventListener('click', () => {
+                populateExcelFileListSettings();
+            });
+            document.getElementById('excelModalSave').addEventListener('click', async () => {
+                const selected = document.querySelector('#excelFileListSettings .excel-file-option.selected');
+
+                if (!selected) {
+                    showToast('ファイルを選択してください', 'warning');
+                    return;
+                }
+
+                appState.excelFileId = selected.dataset.fileId;
+                appState.excelFileName = selected.dataset.fileName;
+                localStorage.setItem('kumon_excelFileId', appState.excelFileId);
+                localStorage.setItem('kumon_excelFileName', appState.excelFileName);
+                document.getElementById('excelModal').classList.remove('active');
+                renderSettings();
+                showToast('Excel ファイルを設定しました', 'success');
+                // Sync data from Excel after file selection
+                syncFromExcel().then(() => {
+                    showToast('データを同期しました', 'success');
+                }).catch(err => console.log('Sync after file select failed:', err));
+            });
+            document.getElementById('btnAddLoc').addEventListener('click', addLocation);
+            document.getElementById('btnManualSync').addEventListener('click', syncToExcel);
+            document.getElementById('btnReset').addEventListener('click', async () => {
+                if (await showConfirm('リセット', 'すべてのデータが削除されます。本当に実行しますか？')) {
+                    localStorage.clear();
+                    location.reload();
+                }
+            });
+
+            // Records filter
+            document.getElementById('recordsFilterEmp').addEventListener('change', renderRecords);
+            document.getElementById('recordsFilterLoc').addEventListener('change', renderRecords);
+        }
+
+        // ========== SETUP WIZARD ==========
+        function showSetupWizard() {
+            document.getElementById('setupWizard').classList.add('active');
+            document.getElementById('wizard').classList.add('active');
+            document.getElementById('redirectUri').textContent = CONFIG.redirectUri;
+
+            document.getElementById('wizardStep1Next').addEventListener('click', () => {
+                const clientId = document.getElementById('clientId').value.trim();
+                if (!clientId) {
+                    showToast('クライアント ID を入力してください', 'warning');
+                    return;
+                }
+                CONFIG.clientId = clientId;
+                localStorage.setItem('kumon_clientId', clientId);
+                initMSAL();
+                nextWizardStep();
+            });
+
+            document.getElementById('wizardStep2Login').addEventListener('click', async () => {
+                if (!CONFIG.msalInstance) {
+                    initMSAL();
+                }
+                try {
+                    await CONFIG.msalInstance.loginPopup({ scopes: CONFIG.scopes });
+                    nextWizardStep();
+                    populateExcelFileList();
+                } catch (err) {
+                    showToast('ログインに失敗しました', 'error');
+                    console.error(err);
+                }
+            });
+
+            document.getElementById('wizardStep3Next').addEventListener('click', async () => {
+                let fileId = null;
+                const newName = document.getElementById('newExcelName').value.trim();
+
+                const selected = document.querySelector('.excel-file-option.selected');
+                if (selected) {
+                    fileId = selected.dataset.fileId;
+                    appState.excelFileName = selected.dataset.fileName;
+                } else if (newName) {
+                    try {
+                        showToast('Excel ファイルを作成中...', 'info', 0);
+                        const file = await createExcelFile(newName);
+                        fileId = file.id;
+                        appState.excelFileName = newName;
+                        document.querySelector('#toastContainer .toast').remove();
+                        showToast('ファイルを作成しました', 'success');
+                    } catch (err) {
+                        showToast('ファイル作成に失敗しました', 'error');
+                        console.error(err);
+                        return;
+                    }
+                } else {
+                    showToast('ファイルを選択または作成してください', 'warning');
+                    return;
+                }
+
+                appState.excelFileId = fileId;
+                localStorage.setItem('kumon_excelFileId', fileId);
+                localStorage.setItem('kumon_excelFileName', appState.excelFileName);
+                nextWizardStep();
+            });
+
+            document.getElementById('wizardStep3Back').addEventListener('click', prevWizardStep);
+            document.getElementById('wizardStep4Back').addEventListener('click', prevWizardStep);
+
+            document.getElementById('wizardStep4Finish').addEventListener('click', () => {
+                const locName = document.getElementById('locName').value.trim();
+                if (!locName) {
+                    showToast('拠点名を入力してください', 'warning');
+                    return;
+                }
+
+                const locId = 'loc_' + Date.now();
+                appState.locations.push({ id: locId, name: locName });
+                appState.currentLocationId = locId;
+                saveAppState();
+
+                document.getElementById('setupWizard').classList.remove('active');
+                document.getElementById('wizard').classList.remove('active');
+                loadAndRender();
+                showToast('セットアップが完了しました', 'success');
+                // Sync data from Excel after wizard completion
+                if (appState.excelFileId) {
+                    syncFromExcel().then(() => {
+                        loadAndRender();
+                    }).catch(err => console.log('Sync after wizard failed:', err));
+                }
+            });
+
+            // Skip button — offline demo mode
+            document.getElementById('wizardSkipBtn').addEventListener('click', () => {
+                CONFIG.offlineMode = true;
+
+                // Set up a default location
+                const locId = 'loc_demo';
+                if (!appState.locations.find(l => l.id === locId)) {
+                    appState.locations.push({ id: locId, name: '本部教室' });
+                }
+                appState.currentLocationId = locId;
+
+                // Add demo employees
+                const demoEmps = [
+                    { id: 'emp_1', name: '田中 花子', dept: '算数', avatarSeed: '田中 花子', avatarStyle: 'adventurer', isIn: false, checkinTime: null },
+                    { id: 'emp_2', name: '鈴木 太郎', dept: '国語', avatarSeed: '鈴木 太郎', avatarStyle: 'avataaars', isIn: false, checkinTime: null },
+                    { id: 'emp_3', name: '佐藤 美咲', dept: '英語', avatarSeed: '佐藤 美咲', avatarStyle: 'pixel-art', isIn: false, checkinTime: null },
+                    { id: 'emp_4', name: '山田 健一', dept: '算数', avatarSeed: '山田 健一', avatarStyle: 'big-ears', isIn: false, checkinTime: null },
+                    { id: 'emp_5', name: '高橋 さくら', dept: '国語', avatarSeed: '高橋 さくら', avatarStyle: 'lorelei', isIn: false, checkinTime: null },
+                ];
+                demoEmps.forEach(e => {
+                    if (!appState.employees.find(x => x.id === e.id)) {
+                        appState.employees.push(e);
+                    }
+                });
+
+                saveAppState();
+                document.getElementById('setupWizard').classList.remove('active');
+                document.getElementById('wizard').classList.remove('active');
+                loadAndRender();
+                showToast('オフラインモードで起動しました', 'success');
+            });
+
+        }
+
+        function nextWizardStep() {
+            document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.progress-dot').forEach(d => d.classList.remove('active'));
+
+            const current = document.querySelector('.wizard-step.active');
+            const next = current?.nextElementSibling;
+            if (next?.classList.contains('wizard-step')) {
+                next.classList.add('active');
+                const steps = document.querySelectorAll('.wizard-step');
+                const idx = Array.from(steps).indexOf(next);
+                document.querySelectorAll('.progress-dot').forEach((d, i) => {
+                    if (i <= idx) d.classList.add('active');
+                });
+            }
+        }
+
+        function prevWizardStep() {
+            const current = document.querySelector('.wizard-step.active');
+            const prev = current?.previousElementSibling;
+            if (prev?.classList.contains('wizard-step')) {
+                document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+                document.querySelectorAll('.progress-dot').forEach(d => d.classList.remove('active'));
+                prev.classList.add('active');
+                const steps = document.querySelectorAll('.wizard-step');
+                const idx = Array.from(steps).indexOf(prev);
+                document.querySelectorAll('.progress-dot').forEach((d, i) => {
+                    if (i <= idx) d.classList.add('active');
+                });
+            }
+        }
+
+        async function populateExcelFileList() {
+            const listDiv = document.getElementById('excelFileList');
+            listDiv.innerHTML = '';
+
+            try {
+                const files = await listExcelFiles();
+                if (files.length === 0) {
+                    listDiv.innerHTML = '<p style="color: var(--ink2); font-size: 12px;">OneDrive に Excel ファイルがありません。下で新しいファイルを作成してください。</p>';
+                    return;
+                }
+
+                const html = files.map(f => `
+                    <div class="excel-file-option" data-file-id="${f.id}" data-file-name="${f.name}">
+                        <div style="font-size: 13px; font-weight: 600;">${f.name}</div>
+                        <div style="font-size: 11px; color: var(--ink2);">${f.createdDateTime ? new Date(f.createdDateTime).toLocaleDateString('ja-JP') : ''}</div>
+                    </div>
+                `).join('');
+
+                listDiv.innerHTML = html;
+                listDiv.querySelectorAll('.excel-file-option').forEach(opt => {
+                    opt.addEventListener('click', () => {
+                        listDiv.querySelectorAll('.excel-file-option').forEach(o => o.classList.remove('selected'));
+                        opt.classList.add('selected');
+                    });
+                });
+            } catch (err) {
+                showToast('Excel ファイルの取得に失敗しました', 'error');
+                console.error(err);
+            }
+        }
+
+        async function createExcelFile(fileName) {
+            try {
+                // Minimal valid xlsx file (base64 encoded)
+                const xlsxBase64 = 'UEsDBBQAAAAIAAAAAACKIYazWwAAAGEAAAATABwAW0NvbnRlbnRfVHlwZXNdLnhtbFVUCQADAAAAAAAAAE2OzQrCMBCE74LvEHIV0+pBRJr2oOJV6wOEdNsG252Q3R99e7egeBpm+JiZLKvr0KsLReo8G1gnKSjixtcdtwY+m7flDhQVZLV6z4YMjUQqsyMp7DUlGgclKeQ+UOPbzsfhK+d2aTX7lDvKVqIh81M1iiTXRjnx/xYEHzcS0HwMihrg0Sl4YFfD7wBQSwMEFAAAAAgAAAAAAIGwH3mzAAAA+QAAABEAHABkb2NQcm9wcy9jb3JlLnhtbFVUCQADAAAAAAAAAE2QQQ6CQBBE7ya+gel9gNGDMQ5w0JveZKCBSaZnyHQj+HtnQKN7qa5f1cvPmu3Q2eITfDCOBaxYARLJuNpQI+BUH+c7UISaau0coYARAmyz+0vbtbxO7+0DBBkhiUEJaJHbnHMfW7A6LF0HlF5X562OKfQN77T51A3w9WKx4RZR1xo1n4hkM1F90P5h1RPOwWgz2d+WxVzyn/3sC1BLAwQUAAAACAAAAAAApb3M+rEAAAD8AAAADwAcAGRvY1Byb3BzL2FwcC54bWxVVAkAAwAAAAAAAABNjsEKwjAQRO+C/7DkblI9iEjTHlS86gcsSdoGm92Q3Yr+vVtQvM0w8xiKep7s6ENMzqOGHWdQgDeuTqnV8Do/VgdQxDrVevCo4YsS1OVlEbv0ZJgTFdkkpQE3iB0iJjPjFBOPD1x2t7J+4v9rRYjJEbWhxBaz/INXi5HdR7X3LZmAYvktfwBQSwMEFAAAAAgAAAAAAGBM7HlqAAAAfgAAABMAHAB4bC93b3JrYm9vay54bWxVVAkAAwAAAAAAAABNjkEKwCAMRPeF3kGytzfooofi/S8hUqF0Y0b/w0Cv4MKNM6l1mCXZFJPTRG/hEOMMCZi0K/weLFk4xfCc73K3KPiRLqwBUEsDBBQAAAAIAAAAAAC8BjO9lAAAAL4AAAANABwAeGwvc3R5bGVzLnhtbFVUCQADAAAAAAAAAE2OQQrCQAxF94LnCNmLUxeipO1C0a3oAcJ0pgbaTMhkxHp6p6DgJo/8/wgU57lTn5B48Gx0llpQwS3xzM7oO//aZHtQIqFVHWeu9aXZPjh5Zx89QKyN3rJA88nPpsgYSfJEb2EjJVPSvf95YAGkX/bJAg9mOu3TW6R/kR9QSwMEFAAAAAgAAAAAAC0EFDReAAAAeQAAAA4AHABkb2NQcm9wcy9jb3JlLnhtbFVUCQADAAAAAAAAADWOywrCMBBF94L/MHTfpC5EpGkXKm5F/YAhnbbBZiZksqJ/bwoW1nA5cC+yej/Y6hMCW88GKlECA2R8YakxcKuvyy0oipqs7jwjw4gEKjvLY9c/CtGE1FjnRiJT9QZaxDaXkogz2JBE3wGnl8oHl9JMPfcx6cLgF/Xy4IDalJLr/lYkPfhq+2L0H1BLAwQUAAAACAAAAAAARkCkjJYAAAC8AAAAGAAcAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbFVUCQADAAAAAAAAAE2OywrCMBBF94L/0LDXxm5EpGkX+tiqH5BkJjZox5JJi/69qSi4u5x7L/KquF7t4JVCyzeTojKQgHFeB+8MvM6P1Q4USXJV2fm21he+4F5sCUvgTiQ51i2m2KhP4dPIh3w9MvOVY4j3r3iNq8NWG/c7c8qJnTw76J3IgX+wnx9QSwMEFAAAAAgAAAAAAOgRhIatAAAA/gAAABMAHABbQ29udGVudF9UeXBlc10ueG1sVVQJAAMAAAAAAAAAhc9BDsIgEAXQvYl3INNdS+NCTGl3Ku5QBsgkMEP+ULS3l1Y3bl/m/8mU1W2c/OOKiQZmA0VeQIJseHDsG/i8tlcZJFIlwZPOZmBGSmV54oTW5KVDhKsWk9A8HhLJ5hwvhJzYJJECPy+rT2vA+oQn+PScjfAr/lKOuBmO0UfqwOfC+w1sJSRqFQ/8fOANUEsDBBQAAAAIAAAAAAB/MQibVwAAAF4AAAALABwAX3JlbHMvLnJlbHNVVAkAAwAAAABNjjEOwCAMRPcK97BYZWgURdkYsqL0AI5xEFLAyDb3x8OAupqn/6S83vdpdU10rh4DtKIGBTR4c+AVw/z8GHagqFRi5dPqulhIuR1q0cFiWbMXnbpkIsz3y2bfvyeqBvKC+vwAUEsBAh4DFAAAAAgAAAAAAIohhrNbAAAAYQAAABMAGAAAAAAAAAAAAKSBAAAAAFtDb250ZW50X1R5cGVzXS54bWxVVAUAAwAAAAB1eAsAAQT2AQAABBQAAABQSwECHgMUAAAACAAAAAAAgbAfeYsAAAD5AAAARQAIAAAAAAABAAAAAKSBKQAAAGR/Y1Byb3BzL2NvcmUueG1sVVQEAAMAAAAAUEsBAh4DFAAAAAgAAAAAAKW9zPqxAAAA/AAAAA8AGAAAAAAAAQAAAKSBqAAAAGRvY1Byb3BzL2FwcC54bWxVVAUAAwAAAAB1eAsAAQT2AQAABBQAAABQSwECHgMUAAAACAAAAAAA/YEseWoAAAB+AAAAE1AYAAAAAAAAAAAAAKSBHAEAAHB4bC93b3JrYm9vay54bWxVVAUAAwAAAAB1eAsAAQT2AQAABBQAAABQSwECHgMUAAAACAAAAAAAvAYzvZQAAAC+AAAADQAYAAAAAAAAAAAAAKSBZAEAAHB4bC9zdHlsZXMueG1sVVQFAAMAAAAAeXgLAAEE9gEAAAQUAAAAUEsBAh4DFAAAAAgAAAAAAC0EFDReAAAAeQAAAA4AGAAAAAAAAQAAAKSBzAIAAGRvY1Byb3BzL2NvcmUueG1sVVQFAAMAAAAAeXgLAAEE9gEAAAQUAAAAUEsBAh4DFAAAAAgAAAAAAEZApIyWAAAAvAAAABgAGAAAAAAAAAAAAKSBPgMAAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbFVUBQADAAAAAHV4CwABBPYBAAAEFAAAAFBLAQIeAxQAAAAIAAAAAADoEYSGrQAAAP4AAAATABgAAAAAAAEAAACkgdgDAABbQ29udGVudF9UeXBlc10ueG1sVVQFAAMAAAAAeXgLAAEE9gEAAAQUAAAAUEsBAh4DFAAAAAgAAAAAAH8xCJtXAAAAXgAAAAsAGAAAAAAAAAAAAKSBmgQAAF9yZWxzLy5yZWxzVVQFAAMAAAAAeXgLAAEE9gEAAAQUAAAAUEsFBgAAAAAJAAkAfwIAAP0EAAAAAA==';
+
+                // Upload as valid xlsx file
+                const token = await getAccessToken();
+                if (!token) throw new Error('Not authenticated');
+
+                const binaryStr = atob(xlsxBase64);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) {
+                    bytes[i] = binaryStr.charCodeAt(i);
+                }
+
+                const res = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(fileName)}:/content`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    },
+                    body: bytes.buffer
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(`Upload failed: ${res.status} - ${errText}`);
+                }
+
+                return await res.json();
+            } catch (err) {
+                console.error('Failed to create Excel file', err);
+                throw err;
+            }
+        }
+
+        // ========== MICROSOFT LOGIN ==========
+        async function handleMicrosoftLogin() {
+            if (!CONFIG.msalInstance) {
+                showToast('MSAL が初期化されていません', 'error');
+                return;
+            }
+
+            try {
+                // Fresh login - select_account lets user pick which account
+                await CONFIG.msalInstance.loginPopup({
+                    scopes: CONFIG.scopes,
+                    prompt: 'select_account'
+                });
+                renderSettings();
+                showToast('ログインしました', 'success');
+                // Sync data from Excel after login
+                if (appState.excelFileId) {
+                    syncFromExcel().catch(err => console.log('Sync after login failed:', err));
+                }
+            } catch (err) {
+                showToast('ログインに失敗しました', 'error');
+                console.error(err);
+            }
+        }
+
+        // ========== AVATAR HELPER ==========
+        function getAvatarUrl(seed, style) {
+            style = style || 'adventurer';
+            return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
+        }
+
+        // Get the best avatar URL for an employee (custom upload > dicebear)
+        function getEmpAvatarUrl(emp) {
+            if (emp.customAvatarUrl) return emp.customAvatarUrl;
+            return getAvatarUrl(emp.avatarSeed || emp.name, emp.avatarStyle || 'adventurer');
+        }
+
+        // Resize image to max 128x128 and return as data URL
+        function resizeImage(file, maxSize = 128) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+                        else { w = Math.round(w * maxSize / h); h = maxSize; }
+                        canvas.width = w;
+                        canvas.height = h;
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        resolve(canvas.toDataURL('image/jpeg', 0.8));
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Upload avatar image to OneDrive
+        async function uploadAvatarToOneDrive(empId, dataUrl) {
+            const token = await getAccessToken();
+            if (!token) throw new Error('Not authenticated');
+
+            // Convert data URL to blob
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+
+            const fileName = `avatar_${empId}.jpg`;
+            const uploadUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/KumonAttendance/avatars/${fileName}:/content`;
+
+            const uploadRes = await fetch(uploadUrl, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': blob.type
+                },
+                body: blob
+            });
+
+            if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
+
+            const fileData = await uploadRes.json();
+
+            // Create a sharing link to get a public URL
+            const shareRes = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${fileData.id}/createLink`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ type: 'view', scope: 'anonymous' })
+            });
+
+            if (shareRes.ok) {
+                const shareData = await shareRes.json();
+                // Convert sharing URL to direct download URL
+                const shareUrl = shareData.link.webUrl;
+                const base64Url = btoa(shareUrl).replace(/=/g, '').replace(/\//g, '_').replace(/\+/g, '-');
+                return `https://api.onedrive.com/v1.0/shares/u!${base64Url}/root/content`;
+            }
+
+            // Fallback: use the @microsoft.graph.downloadUrl (temporary)
+            return fileData['@microsoft.graph.downloadUrl'] || dataUrl;
+        }
+
+        // Pending custom avatar data URL (set during file selection, used during save)
+        let pendingAvatarDataUrl = null;
+
+        // ========== EMPLOYEE MANAGEMENT ==========
+        let editingEmployeeId = null;
+
+        function openEmpModal() {
+            document.getElementById('empModalTitle').textContent = '従業員を追加';
+            document.getElementById('empForm').reset();
+            document.getElementById('empLineUserId').value = '';
+            document.getElementById('empName').focus();
+
+            editingEmployeeId = null;
+            pendingAvatarDataUrl = null;
+
+            // Reset custom avatar preview
+            const preview = document.getElementById('customAvatarPreview');
+            if (preview) {
+                preview.innerHTML = '<span style="font-size:28px;color:var(--text-muted);">👤</span>';
+                preview.style.backgroundImage = '';
+            }
+            const removeBtn = document.getElementById('btnRemoveAvatar');
+            if (removeBtn) removeBtn.style.display = 'none';
+            const fileInput = document.getElementById('empAvatarFile');
+            if (fileInput) fileInput.value = '';
+
+            populateAvatarPicker();
+            document.getElementById('empModal').classList.add('active');
+        }
+
+        function closeEmpModal() {
+            document.getElementById('empModal').classList.remove('active');
+            editingEmployeeId = null;
+        }
+
+        function populateAvatarPicker() {
+            const styles = [
+                { key: 'adventurer', label: 'アドベンチャー' },
+                { key: 'avataaars', label: 'アバター' },
+                { key: 'big-ears', label: 'ビッグイヤー' },
+                { key: 'bottts', label: 'ロボット' },
+                { key: 'lorelei', label: 'ロレライ' },
+                { key: 'notionists', label: 'ノーショニスト' },
+                { key: 'open-peeps', label: 'ピープル' },
+                { key: 'pixel-art', label: 'ピクセル' },
+                { key: 'thumbs', label: 'サムズ' }
+            ];
+            const picker = document.getElementById('avatarStylePicker');
+            const nameInput = document.getElementById('empName');
+            picker.innerHTML = '';
+
+            const updatePreview = () => {
+                const name = nameInput.value.trim() || 'user';
+                const selectedStyle = picker.querySelector('.avatar-style-option.selected');
+                const style = selectedStyle?.dataset.style || 'adventurer';
+                const preview = document.getElementById('avatarPreview');
+                const previewImg = preview.querySelector('img');
+                previewImg.src = getAvatarUrl(name, style);
+            };
+
+            styles.forEach(style => {
+                const opt = document.createElement('div');
+                opt.className = 'avatar-style-option';
+                opt.dataset.style = style.key;
+                const name = nameInput.value.trim() || 'user';
+                opt.innerHTML = `
+                    <img src="${getAvatarUrl(name, style.key)}" alt="${style.label}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2260%22 height=%2260%22%3E%3Crect fill=%22%23f0f0f0%22 width=%2260%22 height=%2260%22/%3E%3Ctext x=%2230%22 y=%2240%22 text-anchor=%22middle%22 font-size=%2220%22%3E👤%3C/text%3E%3C/svg%3E'">
+                    <div class="avatar-style-option-label">${style.label}</div>
+                `;
+                opt.addEventListener('click', () => {
+                    picker.querySelectorAll('.avatar-style-option').forEach(o => o.classList.remove('selected'));
+                    opt.classList.add('selected');
+                    updatePreview();
+                });
+                picker.appendChild(opt);
+            });
+
+            // Select first style by default
+            picker.querySelector('.avatar-style-option').click();
+
+            // Update all previews when name changes
+            nameInput.addEventListener('input', () => {
+                const name = nameInput.value.trim() || 'user';
+                picker.querySelectorAll('.avatar-style-option img').forEach(img => {
+                    const style = img.closest('.avatar-style-option').dataset.style;
+                    img.src = getAvatarUrl(name, style);
+                });
+                updatePreview();
+            });
+        }
+
+        async function saveEmployee() {
+            const name = document.getElementById('empName').value.trim();
+            const dept = document.getElementById('empDept').value.trim();
+            const styleOpt = document.querySelector('.avatar-style-option.selected');
+            const avatarStyle = styleOpt?.dataset.style || 'adventurer';
+            const avatarSeed = name || 'user';
+
+            if (!name || !dept) {
+                showToast('名前と部署を入力してください', 'warning');
+                return;
+            }
+
+            const lineUserId = document.getElementById('empLineUserId').value.trim();
+            let emp;
+
+            if (editingEmployeeId) {
+                // Update existing employee
+                emp = appState.employees.find(e => e.id === editingEmployeeId);
+                if (emp) {
+                    emp.name = name;
+                    emp.dept = dept;
+                    emp.avatarSeed = avatarSeed;
+                    emp.avatarStyle = avatarStyle;
+                    emp.lineUserId = lineUserId || '';
+                    // Keep emoji for backward compatibility
+                    if (!emp.emoji) emp.emoji = undefined;
+                }
+            } else {
+                // Create new employee
+                emp = {
+                    id: 'emp_' + Date.now(),
+                    name,
+                    dept,
+                    avatarSeed,
+                    avatarStyle,
+                    lineUserId: lineUserId || '',
+                    isIn: false,
+                    checkinTime: null
+                };
+                appState.employees.push(emp);
+            }
+
+            if (!emp) return;
+
+            // Handle custom avatar upload/remove
+            if (pendingAvatarDataUrl === 'REMOVE') {
+                emp.customAvatarUrl = '';
+            } else if (pendingAvatarDataUrl) {
+                // Upload to OneDrive if authenticated
+                if (appState.msalAccount && navigator.onLine) {
+                    try {
+                        showToast('アバター画像をアップロード中...', 'info');
+                        const avatarUrl = await uploadAvatarToOneDrive(emp.id, pendingAvatarDataUrl);
+                        emp.customAvatarUrl = avatarUrl;
+                    } catch (err) {
+                        console.error('Avatar upload failed:', err);
+                        // Store data URL as fallback (works locally)
+                        emp.customAvatarUrl = pendingAvatarDataUrl;
+                        showToast('OneDriveへのアップロード失敗。ローカルに保存しました', 'warning');
+                    }
+                } else {
+                    // Not authenticated or offline - store data URL locally
+                    emp.customAvatarUrl = pendingAvatarDataUrl;
+                }
+            }
+
+            pendingAvatarDataUrl = null;
+            saveAppState();
+            closeEmpModal();
+            loadAndRender();
+
+            if (editingEmployeeId) {
+                showToast(`${name} を更新しました`, 'success');
+            } else {
+                showToast(`${name} を追加しました`, 'success');
+            }
+
+            // Sync employees to OneDrive
+            if (appState.excelFileId && navigator.onLine) {
+                syncToExcel().catch(err => console.error('Employee sync failed', err));
+            }
+        }
+
+        function editEmployee(empId) {
+            const emp = appState.employees.find(e => e.id === empId);
+            if (!emp) return;
+
+            editingEmployeeId = empId;
+            pendingAvatarDataUrl = null;
+            document.getElementById('empModalTitle').textContent = '従業員を編集';
+            document.getElementById('empName').value = emp.name;
+            document.getElementById('empDept').value = emp.dept;
+            document.getElementById('empLineUserId').value = emp.lineUserId || '';
+
+            // Show existing custom avatar if set
+            const preview = document.getElementById('customAvatarPreview');
+            const removeBtn = document.getElementById('btnRemoveAvatar');
+            const fileInput = document.getElementById('empAvatarFile');
+            if (fileInput) fileInput.value = '';
+
+            if (emp.customAvatarUrl) {
+                if (preview) {
+                    preview.innerHTML = '';
+                    preview.style.backgroundImage = `url(${emp.customAvatarUrl})`;
+                    preview.style.backgroundSize = 'cover';
+                    preview.style.backgroundPosition = 'center';
+                }
+                if (removeBtn) removeBtn.style.display = 'inline-block';
+            } else {
+                if (preview) {
+                    preview.innerHTML = '<span style="font-size:28px;color:var(--text-muted);">👤</span>';
+                    preview.style.backgroundImage = '';
+                }
+                if (removeBtn) removeBtn.style.display = 'none';
+            }
+
+            populateAvatarPicker();
+            const style = emp.avatarStyle || 'adventurer';
+            const styles = document.querySelectorAll('.avatar-style-option');
+            styles.forEach(opt => {
+                if (opt.dataset.style === style) {
+                    opt.click();
+                }
+            });
+
+            document.getElementById('empModal').classList.add('active');
+        }
+
+        // ========== CHECK IN / OUT ==========
+        const DUPLICATE_THRESHOLD_MS = 60 * 1000; // 1分以内の連続打刻を防止
+
+        async function checkInEmployee(type) {
+            if (!appState.selectedEmployeeId) {
+                showToast('従業員を選択してください', 'warning');
+                return;
+            }
+
+            const emp = appState.employees.find(e => e.id === appState.selectedEmployeeId);
+            if (!emp) return;
+
+            const now = new Date();
+
+            // 1分以内の連続打刻チェック
+            const lastEvent = [...appState.records]
+                .reverse()
+                .find(r => r.empId === emp.id);
+            if (lastEvent) {
+                const elapsed = now - new Date(lastEvent.ts);
+                if (elapsed < DUPLICATE_THRESHOLD_MS) {
+                    const remaining = Math.ceil((DUPLICATE_THRESHOLD_MS - elapsed) / 1000);
+                    showToast(`${emp.name}: 連続打刻防止 — あと${remaining}秒お待ちください`, 'warning');
+                    return;
+                }
+            }
+
+            const ts = now.toISOString();
+            const locId = appState.currentLocationId;
+            const loc = appState.locations.find(l => l.id === locId);
+
+            // Create event record
+            const event = {
+                ts: ts,
+                date: getLocalDateStr(now),
+                empId: emp.id,
+                empName: emp.name,
+                empDept: emp.dept,
+                location: loc?.name || '未設定',
+                type: type,  // 'in' or 'out'
+                device: getDeviceName()
+            };
+            appState.records.push(event);
+
+            if (type === 'in') {
+                showToast(`${emp.name} が出勤しました`, 'success');
+            } else {
+                showToast(`${emp.name} が退勤しました`, 'success');
+            }
+
+            saveAppState();
+            loadAndRender();
+
+            // Sync in background
+            if (appState.excelFileId && navigator.onLine) {
+                syncToExcel().catch(err => console.error('Background sync failed', err));
+            }
+        }
+
+        // Get employee's current status from event records
+        function getEmpStatus(empId) {
+            const today = getLocalDateStr();
+            const todayEvents = appState.records
+                .filter(r => r.empId === empId && r.date === today)
+                .sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+            if (todayEvents.length === 0) {
+                return { isIn: false, lastEvent: null, firstIn: null, lastOut: null };
+            }
+
+            const lastEvent = todayEvents[todayEvents.length - 1];
+            const isIn = lastEvent.type === 'in';
+            const firstIn = todayEvents.find(e => e.type === 'in');
+            const lastOut = [...todayEvents].reverse().find(e => e.type === 'out');
+
+            return { isIn, lastEvent, firstIn, lastOut, todayEvents };
+        }
+
+        // Build paired records (in/out pairs) from events for display/export
+        function buildPairedRecords(events) {
+            const pairs = [];
+            // Group by empId + date
+            const grouped = {};
+            events.forEach(e => {
+                const key = `${e.empId}_${e.date}`;
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push(e);
+            });
+
+            Object.values(grouped).forEach(dayEvents => {
+                dayEvents.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+                let i = 0;
+                while (i < dayEvents.length) {
+                    const ev = dayEvents[i];
+                    if (ev.type === 'in') {
+                        // Look for matching 'out'
+                        const outEv = dayEvents.slice(i + 1).find(e => e.type === 'out');
+
+                        // Calculate duration from actual timestamps
+                        let duration = '--:--';
+                        if (outEv) {
+                            const inDate = new Date(ev.ts);
+                            const outDate = new Date(outEv.ts);
+                            const totalMins = Math.floor((outDate - inDate) / (1000 * 60));
+                            const hours = Math.floor(totalMins / 60);
+                            const mins = totalMins % 60;
+                            duration = `${hours}:${String(mins).padStart(2, '0')}`;
+                        }
+
+                        pairs.push({
+                            date: ev.date,
+                            empId: ev.empId,
+                            empName: ev.empName,
+                            empDept: ev.empDept,
+                            location: ev.location,
+                            inTs: ev.ts,
+                            outTs: outEv ? outEv.ts : null,
+                            duration: duration
+                        });
+                        if (outEv) {
+                            // Skip past the matched out event
+                            i = dayEvents.indexOf(outEv) + 1;
+                        } else {
+                            i++;
+                        }
+                    } else {
+                        // Standalone out (no matching in)
+                        pairs.push({
+                            date: ev.date,
+                            empId: ev.empId,
+                            empName: ev.empName,
+                            empDept: ev.empDept,
+                            location: ev.location,
+                            inTs: null,
+                            outTs: ev.ts,
+                            duration: '--:--'
+                        });
+                        i++;
+                    }
+                }
+            });
+            return pairs;
+        }
+
+        // ========== ATTENDANCE ROUNDING ==========
+        function roundUpTo15Min(date) {
+            const time = date.getTime();
+            const rounded = Math.ceil(time / (15 * 60 * 1000)) * (15 * 60 * 1000);
+            return new Date(rounded);
+        }
+
+        function roundDownTo15Min(date) {
+            const time = date.getTime();
+            const rounded = Math.floor(time / (15 * 60 * 1000)) * (15 * 60 * 1000);
+            return new Date(rounded);
+        }
+
+        // ========== RENDERING ==========
+        function loadAndRender() {
+            renderScanTab();
+            updateDashboardStats();
+            renderEmployeeGrid();
+            updateActivityFeed();
+            initializeDeviceListeners();
+        }
+
+        function renderScanTab() {
+            const grid = document.getElementById('scanEmployeeGrid');
+            grid.innerHTML = '';
+
+            if (appState.employees.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--ink2); padding: 20px;">従業員を追加してください</div>';
+                return;
+            }
+
+            // Show all employees regardless of location
+            appState.employees.forEach(emp => {
+                const status = getEmpStatus(emp.id);
+                const div = document.createElement('div');
+                div.className = 'employee-item' + (emp.id === appState.selectedEmployeeId ? ' selected' : '');
+                const avatarHtml = `<div class="emp-avatar"><img src="${getEmpAvatarUrl(emp)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
+                div.innerHTML = `
+                    ${avatarHtml}
+                    <div class="emp-name">${emp.name}</div>
+                    <div class="emp-status ${status.isIn ? 'in' : 'out'}">${status.isIn ? '出勤中' : '退勤済'}</div>
+                `;
+                div.addEventListener('click', () => selectEmployee(emp.id));
+                grid.appendChild(div);
+            });
+        }
+
+        function selectEmployee(empId) {
+            appState.selectedEmployeeId = empId;
+            renderScanTab();
+
+            const emp = appState.employees.find(e => e.id === empId);
+            if (!emp) return;
+
+            const info = document.getElementById('selectedInfo');
+            info.classList.add('active');
+            const avatarEl = document.getElementById('selectedAvatar');
+            avatarEl.innerHTML = `<img src="${getEmpAvatarUrl(emp)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+            document.getElementById('selectedName').textContent = emp.name;
+            document.getElementById('selectedDept').textContent = emp.dept;
+
+            const status = getEmpStatus(empId);
+
+            if (status.firstIn) {
+                const inDate = new Date(status.firstIn.ts);
+                document.getElementById('todayCheckIn').textContent = `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}`;
+            } else {
+                document.getElementById('todayCheckIn').textContent = '--:--';
+            }
+
+            if (status.lastOut) {
+                const outDate = new Date(status.lastOut.ts);
+                document.getElementById('todayCheckOut').textContent = `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}`;
+            } else {
+                document.getElementById('todayCheckOut').textContent = '--:--';
+            }
+        }
+
+        function updateDashboardStats() {
+            const today = getLocalDateStr();
+            const todayEvents = appState.records.filter(r => r.date === today);
+
+            const checkIn = appState.employees.filter(e => getEmpStatus(e.id).isIn).length;
+
+            document.getElementById('statCheckIn').textContent = checkIn;
+            document.getElementById('statStamps').textContent = todayEvents.length;
+        }
+
+        function renderEmployeeGrid() {
+            const grid = document.getElementById('empGrid');
+            const noMsg = document.getElementById('noEmpMsg');
+
+            if (appState.employees.length === 0) {
+                grid.innerHTML = '';
+                noMsg.style.display = 'block';
+                return;
+            }
+
+            noMsg.style.display = 'none';
+            grid.innerHTML = '';
+
+            appState.employees.forEach(emp => {
+                const card = document.createElement('div');
+                card.className = 'emp-card';
+                let avatarHtml = '';
+                if (emp.emoji) {
+                    // Backward compatibility: show emoji if it exists
+                    avatarHtml = `<div class="emp-card-emoji">${emp.emoji}</div>`;
+                } else {
+                    // Use avatar image (custom or dicebear)
+                    avatarHtml = `<div class="emp-card-emoji"><img src="${getEmpAvatarUrl(emp)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
+                }
+                card.innerHTML = `
+                    ${avatarHtml}
+                    <div class="emp-card-name">${emp.name}</div>
+                    <div class="emp-card-dept">${emp.dept}</div>
+                    <div class="emp-mgmt-toolbar">
+                        <button class="btn btn-secondary btn-small" onclick="editEmployee('${emp.id}')">編集</button>
+                        <button class="btn btn-danger btn-small" onclick="deleteEmployee('${emp.id}')">削除</button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        async function deleteEmployee(empId) {
+            const emp = appState.employees.find(e => e.id === empId);
+            if (!emp) return;
+
+            if (await showConfirm('削除', `${emp.name} を削除しますか？`)) {
+                appState.employees = appState.employees.filter(e => e.id !== empId);
+                saveAppState();
+                renderEmployeeGrid();
+                showToast(`${emp.name} を削除しました`, 'success');
+
+                // Excel からも即座に削除（同期前に）
+                if (appState.excelFileId && navigator.onLine) {
+                    try {
+                        showToast('Excel から削除中...', 'info', 0);
+                        const token = await getAccessToken();
+                        if (token) {
+                            // 現在の従業員リストを Excel に書き込み（削除済みの状態で）
+                            const empValues = [
+                                ['ID', '氏名', '部署', 'アバタースタイル', 'アバターシード'],
+                                ...appState.employees.map(e => [
+                                    e.id, e.name, e.dept || '', e.avatarStyle || 'adventurer', e.avatarSeed || e.name
+                                ])
+                            ];
+                            await writeExcelSheet(appState.excelFileId, '従業員', empValues);
+                            showToast('Excel から削除しました', 'success');
+                        }
+                    } catch (err) {
+                        console.warn('Excel delete failed:', err);
+                    }
+                }
+            }
+        }
+
+        function updateActivityFeed() {
+            const today = getLocalDateStr();
+            const todayEvents = appState.records.filter(r => r.date === today);
+            const feed = document.getElementById('activityFeed');
+
+            if (todayEvents.length === 0) {
+                feed.innerHTML = '<div class="feed-empty">本日の打刻はまだありません</div>';
+                return;
+            }
+
+            const items = todayEvents.map(r => ({
+                ts: new Date(r.ts),
+                text: `${r.empName} が${r.type === 'in' ? '出勤' : '退勤'}しました`,
+                emoji: r.type === 'in' ? '📍' : '🚪'
+            }));
+
+            items.sort((a, b) => b.ts - a.ts);
+
+            feed.innerHTML = items.slice(0, 10).map(item => `
+                <div class="feed-item">
+                    <div class="feed-emoji">${item.emoji}</div>
+                    <div class="feed-content">
+                        <div class="feed-text">${item.text}</div>
+                        <div class="feed-time">${String(item.ts.getHours()).padStart(2, '0')}:${String(item.ts.getMinutes()).padStart(2, '0')}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderDashboard() {
+            // Currently working list
+            renderCurrentlyWorking();
+
+            // Monthly grid
+            renderMonthlyGrid();
+        }
+
+        function renderCurrentlyWorking() {
+            const container = document.getElementById('currentlyWorking');
+            const checkedInEmps = appState.employees.filter(e => getEmpStatus(e.id).isIn);
+
+            if (checkedInEmps.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--ink2); padding: 20px;">出勤している従業員はいません</div>';
+                return;
+            }
+
+            container.innerHTML = checkedInEmps.map(emp => {
+                const status = getEmpStatus(emp.id);
+                let checkinDisplay = '--:--';
+                let durationDisplay = '0分';
+                let location = '未設定';
+
+                if (status.lastEvent) {
+                    location = status.lastEvent.location || '未設定';
+                }
+
+                if (status.firstIn) {
+                    const inDate = new Date(status.firstIn.ts);
+                    checkinDisplay = `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}`;
+
+                    const now = new Date();
+                    const durationMs = now - inDate;
+                    const durationMins = Math.floor(durationMs / 60000);
+                    if (durationMins >= 60) {
+                        const hours = Math.floor(durationMins / 60);
+                        const mins = durationMins % 60;
+                        durationDisplay = `${hours}時間${mins}分`;
+                    } else {
+                        durationDisplay = `${durationMins}分`;
+                    }
+                }
+
+                const avatarHtml = `<div class="currently-working-emoji"><img src="${getEmpAvatarUrl(emp)}" alt="${emp.name}" onerror="this.parentElement.textContent='👤'"></div>`;
+
+                return `
+                    <div class="currently-working-item">
+                        ${avatarHtml}
+                        <div class="currently-working-info">
+                            <div class="currently-working-name">${emp.name}</div>
+                            <div class="currently-working-dept">${emp.dept} · ${location}</div>
+                            <div class="currently-working-time">出勤: ${checkinDisplay} (${durationDisplay})</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderMonthlyGrid() {
+            const container = document.getElementById('monthlyGrid');
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth();
+
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const employees = appState.employees;
+
+            if (employees.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--ink2); padding: 20px;">従業員がいません</div>';
+                return;
+            }
+
+            // Build paired records from events, then calculate hours
+            const pairs = buildPairedRecords(appState.records);
+            const monthData = {};
+            employees.forEach(emp => { monthData[emp.id] = {}; });
+
+            pairs.forEach(r => {
+                const rDate = new Date(r.date);
+                if (rDate.getMonth() === month && rDate.getFullYear() === year) {
+                    if (!monthData[r.empId]) monthData[r.empId] = {};
+
+                    let hours = 0;
+                    if (r.inTs && r.outTs) {
+                        hours = (new Date(r.outTs) - new Date(r.inTs)) / (1000 * 3600);
+                    }
+
+                    const day = rDate.getDate();
+                    monthData[r.empId][day] = (monthData[r.empId][day] || 0) + hours;
+                }
+            });
+
+            // Build table HTML
+            let html = '<table class="monthly-grid"><thead><tr>';
+            html += '<th>氏名</th>';
+            for (let day = 1; day <= daysInMonth; day++) {
+                html += `<th>${day}</th>`;
+            }
+            html += '<th>累計</th></tr></thead><tbody>';
+
+            employees.forEach(emp => {
+                html += '<tr>';
+                html += `<td>${emp.name}</td>`;
+
+                let monthTotal = 0;
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const hours = monthData[emp.id][day] || 0;
+                    monthTotal += hours;
+
+                    if (hours > 0) {
+                        html += `<td class="grid-cell-worked">${hours.toFixed(1)}</td>`;
+                    } else {
+                        html += `<td class="grid-cell-empty">-</td>`;
+                    }
+                }
+
+                html += `<td class="grid-cell-total">${monthTotal.toFixed(1)}</td>`;
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function renderRecords() {
+            const filterEmp = document.getElementById('recordsFilterEmp').value;
+            const filterLoc = document.getElementById('recordsFilterLoc').value;
+
+            let events = [...appState.records];
+            if (filterEmp) events = events.filter(r => r.empId === filterEmp);
+            if (filterLoc) events = events.filter(r => r.location === filterLoc);
+
+            const tbody = document.getElementById('recordsTableBody');
+            tbody.innerHTML = '';
+
+            events.sort((a, b) => new Date(b.ts) - new Date(a.ts)).forEach((r, idx) => {
+                const d = new Date(r.ts);
+                const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                const typeLabel = r.type === 'in' ? '出勤' : '退勤';
+                const typeClass = r.type === 'in' ? 'color: var(--green);' : 'color: var(--red, #e53e3e);';
+
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${r.date}</td>
+                    <td>${time}</td>
+                    <td style="${typeClass} font-weight: 600;">${typeLabel}</td>
+                    <td>${r.empName}</td>
+                    <td>${r.location}</td>
+                    <td style="font-size: 12px; color: var(--ink3);">${r.device || ''}</td>
+                    <td><button class="btn btn-secondary btn-small" onclick="openEditRecord('${r.empId}', '${r.ts}')">編集</button></td>
+                `;
+            });
+
+            // Update filters
+            const empSelect = document.getElementById('recordsFilterEmp');
+            const locSelect = document.getElementById('recordsFilterLoc');
+
+            const empSet = new Set(appState.records.map(r => r.empId));
+            empSelect.innerHTML = '<option value="">すべて</option>';
+            appState.employees.forEach(e => {
+                if (empSet.has(e.id)) {
+                    const opt = document.createElement('option');
+                    opt.value = e.id;
+                    opt.textContent = e.name;
+                    empSelect.appendChild(opt);
+                }
+            });
+
+            const locSet = new Set(appState.records.map(r => r.location));
+            locSelect.innerHTML = '<option value="">すべて</option>';
+            locSet.forEach(loc => {
+                const opt = document.createElement('option');
+                opt.value = loc;
+                opt.textContent = loc;
+                locSelect.appendChild(opt);
+            });
+        }
+
+        // ========== RECORD EDITING ==========
+        let editingRecordKey = null; // { empId, ts }
+
+        function openEditRecord(empId, ts) {
+            const record = appState.records.find(r => r.empId === empId && r.ts === ts);
+            if (!record) {
+                showToast('レコードが見つかりません', 'error');
+                return;
+            }
+
+            editingRecordKey = { empId, ts };
+            const d = new Date(ts);
+
+            // Use local (JST) date to avoid UTC/JST mismatch
+            const localDate = getLocalDateStr(d);
+
+            document.getElementById('editRecordInfo').textContent =
+                `${record.empName} — ${localDate}`;
+            document.getElementById('editRecordDate').value = localDate;
+            document.getElementById('editRecordTime').value =
+                `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            document.getElementById('editRecordType').value = record.type;
+
+            document.getElementById('editRecordModal').classList.add('active');
+        }
+
+        // Event listeners for edit modal
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('editRecordCancel').addEventListener('click', () => {
+                document.getElementById('editRecordModal').classList.remove('active');
+                editingRecordKey = null;
+            });
+
+            document.getElementById('editRecordSave').addEventListener('click', () => {
+                if (!editingRecordKey) return;
+
+                const record = appState.records.find(
+                    r => r.empId === editingRecordKey.empId && r.ts === editingRecordKey.ts
+                );
+                if (!record) return;
+
+                const newDate = document.getElementById('editRecordDate').value;
+                const newTime = document.getElementById('editRecordTime').value;
+                const newType = document.getElementById('editRecordType').value;
+
+                if (!newDate || !newTime) {
+                    showToast('日付と時刻を入力してください', 'warning');
+                    return;
+                }
+
+                // Build new timestamp
+                const newTs = new Date(`${newDate}T${newTime}:00`).toISOString();
+
+                record.ts = newTs;
+                record.date = newDate;
+                record.type = newType;
+
+                saveAppState();
+                loadAndRender();
+                renderRecords();
+                document.getElementById('editRecordModal').classList.remove('active');
+                editingRecordKey = null;
+                showToast('記録を修正しました', 'success');
+
+                // Sync
+                if (appState.excelFileId && navigator.onLine) {
+                    syncToExcel().catch(err => console.error('Edit sync failed', err));
+                }
+            });
+
+            document.getElementById('editRecordDelete').addEventListener('click', async () => {
+                if (!editingRecordKey) return;
+
+                const record = appState.records.find(
+                    r => r.empId === editingRecordKey.empId && r.ts === editingRecordKey.ts
+                );
+                if (!record) return;
+
+                if (await showConfirm('削除', `${record.empName} の ${record.type === 'in' ? '出勤' : '退勤'} 記録を削除しますか？`)) {
+                    appState.records = appState.records.filter(
+                        r => !(r.empId === editingRecordKey.empId && r.ts === editingRecordKey.ts)
+                    );
+                    saveAppState();
+                    loadAndRender();
+                    renderRecords();
+                    document.getElementById('editRecordModal').classList.remove('active');
+                    editingRecordKey = null;
+                    showToast('記録を削除しました', 'success');
+
+                    if (appState.excelFileId && navigator.onLine) {
+                        syncToExcel().catch(err => console.error('Delete record sync failed', err));
+                    }
+                }
+            });
+        });
+
+        function renderSettings() {
+            const authStatus = document.getElementById('authStatus');
+            const btnAuth = document.getElementById('btnAuth');
+
+            if (CONFIG.msalInstance) {
+                const accounts = CONFIG.msalInstance.getAllAccounts();
+                if (accounts.length > 0) {
+                    authStatus.textContent = accounts[0].username || 'ログイン済み';
+                    btnAuth.textContent = '再ログイン';
+                } else {
+                    authStatus.textContent = '未認証';
+                    btnAuth.textContent = 'ログイン';
+                }
+            }
+
+            document.getElementById('excelFileInfo').textContent = appState.excelFileName || 'なし';
+            document.getElementById('lastSyncTime').textContent = appState.lastSyncTime
+                ? new Date(appState.lastSyncTime).toLocaleString('ja-JP')
+                : '未実施';
+
+            // Update device name display
+            const deviceNameEl = document.getElementById('deviceNameDisplay');
+            if (deviceNameEl) {
+                deviceNameEl.textContent = getDeviceName();
+            }
+
+            const locList = document.getElementById('locationList');
+            locList.innerHTML = '';
+            appState.locations.forEach(loc => {
+                const item = document.createElement('div');
+                item.className = 'location-item' + (loc.id === appState.currentLocationId ? ' current' : '');
+                item.innerHTML = `
+                    <div>${loc.name}</div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-secondary btn-small" onclick="selectLocation('${loc.id}')">選択</button>
+                        <button class="btn btn-danger btn-small" onclick="deleteLocation('${loc.id}')">削除</button>
+                    </div>
+                `;
+                locList.appendChild(item);
+            });
+        }
+
+        function selectLocation(locId) {
+            appState.currentLocationId = locId;
+            localStorage.setItem('kumon_currentLocationId', locId);
+            renderSettings();
+            updateLocationBadge();
+            showToast('拠点を選択しました', 'success');
+        }
+
+        async function deleteLocation(locId) {
+            const loc = appState.locations.find(l => l.id === locId);
+            if (!loc) return;
+
+            if (await showConfirm('削除', `${loc.name} を削除しますか？`)) {
+                appState.locations = appState.locations.filter(l => l.id !== locId);
+                if (appState.currentLocationId === locId) {
+                    appState.currentLocationId = appState.locations[0]?.id || null;
+                }
+                saveAppState();
+                renderSettings();
+                updateLocationBadge();
+                showToast(`${loc.name} を削除しました`, 'success');
+
+                // Excel からも即座に削除（同期前に）
+                if (appState.excelFileId && navigator.onLine) {
+                    try {
+                        showToast('Excel から削除中...', 'info', 0);
+                        const token = await getAccessToken();
+                        if (token) {
+                            // 現在の拠点リストを Excel に書き込み（削除済みの状態で）
+                            const locValues = [
+                                ['ID', '拠点名'],
+                                ...appState.locations.map(l => [l.id, l.name])
+                            ];
+                            await writeExcelSheet(appState.excelFileId, '拠点', locValues);
+                            showToast('Excel から削除しました', 'success');
+                        }
+                    } catch (err) {
+                        console.warn('Excel location delete failed:', err);
+                    }
+                }
+            }
+        }
+
+        function addLocation() {
+            const input = document.getElementById('locInput');
+            const name = input.value.trim();
+
+            if (!name) {
+                showToast('拠点名を入力してください', 'warning');
+                return;
+            }
+
+            if (appState.locations.some(l => l.name === name)) {
+                showToast('その拠点は既に存在します', 'warning');
+                return;
+            }
+
+            appState.locations.push({
+                id: 'loc_' + Date.now(),
+                name
+            });
+
+            saveAppState();
+            input.value = '';
+            renderSettings();
+            showToast(`${name} を追加しました`, 'success');
+            // Sync to OneDrive
+            if (appState.excelFileId && navigator.onLine) {
+                syncToExcel().catch(err => console.error('Location add sync failed', err));
+            }
+        }
+
+        function selectExcelFile() {
+            document.getElementById('excelModal').classList.add('active');
+            populateExcelFileListSettings();
+        }
+
+        async function populateExcelFileListSettings() {
+            const container = document.getElementById('excelFileListSettings');
+            container.innerHTML = '<div style="text-align: center; color: var(--ink3); padding: 12px;">読み込み中...</div>';
+            try {
+                const files = await listExcelFiles();
+                if (files.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; color: var(--ink3); padding: 12px;">Excel ファイルが見つかりません</div>';
+                    return;
+                }
+                container.innerHTML = '';
+                files.forEach(f => {
+                    const div = document.createElement('div');
+                    div.className = 'excel-file-option';
+                    div.dataset.fileId = f.id;
+                    div.dataset.fileName = f.name;
+                    const folder = f.parentReference?.path?.replace('/drive/root:', '') || '';
+                    div.innerHTML = `<strong>${f.name}</strong>${folder ? `<br><span style="font-size:11px;color:var(--ink3);">${folder}/</span>` : ''}`;
+                    if (f.id === appState.excelFileId) div.classList.add('selected');
+                    div.addEventListener('click', () => {
+                        container.querySelectorAll('.excel-file-option').forEach(o => o.classList.remove('selected'));
+                        div.classList.add('selected');
+                    });
+                    container.appendChild(div);
+                });
+            } catch (err) {
+                container.innerHTML = '<div style="text-align: center; color: var(--red); padding: 12px;">ファイル一覧の取得に失敗しました</div>';
+                console.error(err);
+            }
+        }
+
+        function exportCSV() {
+            const filterEmp = document.getElementById('recordsFilterEmp').value;
+            const filterLoc = document.getElementById('recordsFilterLoc').value;
+
+            let pairs = buildPairedRecords(appState.records);
+            if (filterEmp) pairs = pairs.filter(r => r.empId === filterEmp);
+            if (filterLoc) pairs = pairs.filter(r => r.location === filterLoc);
+
+            const rows = [
+                ['日付', '氏名', '部署', '拠点', '出勤打刻', '退勤打刻', '給与用出勤', '給与用退勤', '勤務時間']
+            ];
+
+            pairs.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(r => {
+                const inDate = r.inTs ? new Date(r.inTs) : null;
+                const outDate = r.outTs ? new Date(r.outTs) : null;
+
+                let payInTime = '--:--';
+                let payOutTime = '--:--';
+                if (inDate) {
+                    const rounded = roundUpTo15Min(inDate);
+                    payInTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                }
+                if (outDate) {
+                    const rounded = roundDownTo15Min(outDate);
+                    payOutTime = `${String(rounded.getHours()).padStart(2, '0')}:${String(rounded.getMinutes()).padStart(2, '0')}`;
+                }
+
+                let duration = '--:--';
+                if (inDate && outDate) {
+                    const hours = Math.floor((outDate - inDate) / (1000 * 3600));
+                    const mins = Math.floor(((outDate - inDate) / (1000 * 60)) % 60);
+                    duration = `${hours}:${String(mins).padStart(2, '0')}`;
+                }
+
+                rows.push([
+                    r.date,
+                    r.empName,
+                    r.empDept,
+                    r.location,
+                    inDate ? `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}` : '--:--',
+                    outDate ? `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}` : '--:--',
+                    payInTime,
+                    payOutTime,
+                    duration
+                ]);
+            });
+
+            const csv = '\uFEFF' + rows.map(r => r.map(cell => `"${cell}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `勤怠記録_${getLocalDateStr()}.csv`;
+            link.click();
+
+            showToast('CSV をエクスポートしました', 'success');
+        }
+
+        // ========== EVENT-BASED SYNC ==========
+        let isSyncing = false;
+
+        // Normalize date values from Excel (handles serial numbers, strings, and dates)
+        function normalizeExcelDate(val) {
+            if (!val) return '';
+
+            // If it's a number (Excel serial format), convert to date
+            if (typeof val === 'number') {
+                // Excel serial date: days since Jan 1, 1900
+                const excelDate = new Date((val - 25569) * 86400 * 1000);
+                return excelDate.toISOString().split('T')[0];
+            }
+
+            // If it's a string, try to normalize it
+            if (typeof val === 'string') {
+                // Already in ISO format (YYYY-MM-DD)?
+                if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+
+                // Japanese format (YYYY/M/D)?
+                const slashMatch = val.match(/^(\d{4})\/(\d+)\/(\d+)$/);
+                if (slashMatch) {
+                    const y = slashMatch[1];
+                    const m = String(slashMatch[2]).padStart(2, '0');
+                    const d = String(slashMatch[3]).padStart(2, '0');
+                    return `${y}-${m}-${d}`;
+                }
+
+                // Full timestamp (ISO format)?
+                if (val.includes('T')) {
+                    return val.split('T')[0];
+                }
+            }
+
+            return '';
+        }
+
+        // Parse Excel event rows into event objects (handles both new and old format)
+        function parseExcelEvents(rows) {
+            if (rows.length < 2) return [];
+            const header = rows[0];
+
+            // Detect format by header
+            if (header[0] === 'タイムスタンプ' && header[6] === '種別') {
+                // New event format
+                return rows.slice(1).map(row => ({
+                    ts: row[0] || '',
+                    date: normalizeExcelDate(row[1]) || '',
+                    empId: row[2] || '',
+                    empName: row[3] || '',
+                    empDept: row[4] || '',
+                    location: row[5] || '',
+                    type: row[6] || '',
+                    device: row[7] || 'Unknown'
+                })).filter(e => e.ts && e.empId && (e.type === 'in' || e.type === 'out'));
+            } else {
+                // Old paired format — convert to events
+                console.log('Converting old Excel format to events...');
+                const events = [];
+                rows.slice(1).forEach(row => {
+                    const date = normalizeExcelDate(row[0]) || '';
+                    const empName = row[1] || '';
+                    const empDept = row[2] || '';
+                    const location = row[3] || '';
+                    const rawEmpId = row[9] || '';
+                    const rawInTs = row[10] || '';
+                    const rawOutTs = row[11] || '';
+                    const inTime = row[4] || '';
+                    const outTime = row[5] || '';
+                    const device = row[12] || 'Unknown';
+
+                    let empId = rawEmpId;
+                    if (!empId) {
+                        const emp = appState.employees.find(e => e.name === empName);
+                        empId = emp ? emp.id : 'unknown';
+                    }
+
+                    let inTs = rawInTs || null;
+                    if (!inTs && inTime && inTime !== '--:--') {
+                        inTs = `${date}T${inTime}:00`;
+                    }
+                    let outTs = rawOutTs || null;
+                    if (!outTs && outTime && outTime !== '--:--') {
+                        outTs = `${date}T${outTime}:00`;
+                    }
+
+                    if (inTs) {
+                        events.push({ ts: inTs, date, empId, empName, empDept, location, type: 'in', device });
+                    }
+                    if (outTs) {
+                        events.push({ ts: outTs, date, empId, empName, empDept, location, type: 'out', device });
+                    }
+                });
+                return events.filter(e => e.ts && e.empId);
+            }
+        }
+
+        // Merge local and Excel events (deduplicate by empId+ts)
+        function mergeEvents(localEvents, excelEvents) {
+            const map = new Map();
+            excelEvents.forEach(e => map.set(`${e.empId}_${e.ts}`, e));
+            localEvents.forEach(e => map.set(`${e.empId}_${e.ts}`, e));
+            return Array.from(map.values())
+                .sort((a, b) => new Date(a.ts) - new Date(b.ts));
+        }
+
+        // Merge employee lists
+        function mergeEmployees(localEmps, excelEmps) {
+            const localMap = new Map(localEmps.map(e => [e.id, e]));
+            const excelIdSet = new Set(excelEmps.map(e => e.id));
+
+            const result = excelEmps.map(ee => {
+                const local = localMap.get(ee.id);
+                return {
+                    ...ee,
+                    // Preserve local runtime state
+                    isIn: local?.isIn || false,
+                    checkinTime: local?.checkinTime || null,
+                    // Keep local values if Excel has none
+                    lineUserId: ee.lineUserId || local?.lineUserId || '',
+                    customAvatarUrl: ee.customAvatarUrl || local?.customAvatarUrl || ''
+                };
+            });
+
+            // Add employees that only exist locally
+            localEmps.forEach(le => {
+                if (!excelIdSet.has(le.id)) result.push(le);
+            });
+
+            return result;
+        }
+
+        // Main sync: READ from Excel → MERGE → WRITE back
+        async function syncToExcel() {
+            if (!appState.excelFileId) return;
+            if (isSyncing) return;
+
+            const token = await getAccessToken();
+            if (!token) return;
+
+            isSyncing = true;
+            updateSyncIndicator('syncing');
+
+            try {
+                // ===== STEP 1: READ from Excel =====
+                let excelEmps = [];
+                let excelLocs = [];
+                let excelEvents = [];
+
+                try {
+                    const empRows = await readExcelSheet(appState.excelFileId, '従業員');
+                    if (empRows.length > 1) {
+                        excelEmps = empRows.slice(1).map(row => ({
+                            id: row[0], name: row[1], dept: row[2],
+                            avatarStyle: row[3] || 'adventurer',
+                            avatarSeed: row[4] || row[1],
+                            lineUserId: row[5] || '',
+                            customAvatarUrl: row[6] || ''
+                        })).filter(e => e.id && e.name);
+                    }
+                } catch (e) { console.log('Read employees sheet:', e.message); }
+
+                try {
+                    const locRows = await readExcelSheet(appState.excelFileId, '拠点');
+                    if (locRows.length > 1) {
+                        excelLocs = locRows.slice(1).map(row => ({
+                            id: row[0], name: row[1]
+                        })).filter(l => l.id && l.name);
+                    }
+                } catch (e) { console.log('Read locations sheet:', e.message); }
+
+                try {
+                    const recRows = await readExcelSheet(appState.excelFileId, '勤怠記録');
+                    if (recRows.length > 1) {
+                        excelEvents = parseExcelEvents(recRows);
+                    }
+                } catch (e) { console.log('Read records sheet:', e.message); }
+
+                // Read shared settings from Excel
+                try {
+                    const settingsRows = await readExcelSheet(appState.excelFileId, '設定');
+                    if (settingsRows.length > 1) {
+                        const settings = {};
+                        settingsRows.slice(1).forEach(row => { if (row[0]) settings[row[0]] = row[1] || ''; });
+                        // Only apply if local values are empty (new device)
+                        if (!appState.lineGasUrl && settings.lineGasUrl) {
+                            appState.lineGasUrl = settings.lineGasUrl;
+                            localStorage.setItem('kumon_lineGasUrl', settings.lineGasUrl);
+                        }
+                        if (!appState.lineManagerUserId && settings.lineManagerUserId) {
+                            appState.lineManagerUserId = settings.lineManagerUserId;
+                            localStorage.setItem('kumon_lineManagerUserId', settings.lineManagerUserId);
+                        }
+                        if (!localStorage.getItem('kumon_lineNotifyTime') && settings.lineNotifyTime) {
+                            appState.lineNotifyTime = settings.lineNotifyTime;
+                            localStorage.setItem('kumon_lineNotifyTime', settings.lineNotifyTime);
+                        }
+                        if (settings.lineNotifyEnabled === 'true' && !appState.lineNotifyEnabled) {
+                            appState.lineNotifyEnabled = true;
+                            localStorage.setItem('kumon_lineNotifyEnabled', 'true');
+                        }
+                    }
+                } catch (e) { console.log('Read settings sheet:', e.message); }
+
+                // ===== STEP 2: MERGE =====
+                const mergedEvents = mergeEvents(appState.records, excelEvents);
+
+                const mergedEmps = excelEmps.length > 0
+                    ? mergeEmployees(appState.employees, excelEmps)
+                    : [...appState.employees];
+
+                const mergedLocs = (() => {
+                    if (excelLocs.length === 0) return [...appState.locations];
+                    const excelLocIds = new Set(excelLocs.map(l => l.id));
+                    const result = [...excelLocs];
+                    appState.locations.forEach(ll => {
+                        if (!excelLocIds.has(ll.id)) result.push(ll);
+                    });
+                    return result;
+                })();
+
+                // ===== STEP 3: Update local state =====
+                appState.records = mergedEvents;
+                appState.employees = mergedEmps;
+                appState.locations = mergedLocs;
+                if (!appState.locations.find(l => l.id === appState.currentLocationId)) {
+                    appState.currentLocationId = appState.locations[0]?.id || null;
+                }
+
+                // ===== STEP 4: WRITE merged data to Excel =====
+                // Store as event format for multi-device safety
+                const eventValues = [
+                    ['タイムスタンプ', '日付', '従業員ID', '氏名', '部署', '拠点', '種別', 'デバイス'],
+                    ...mergedEvents.map(e => [
+                        e.ts, e.date, e.empId, e.empName, e.empDept, e.location, e.type, e.device || 'Unknown'
+                    ])
+                ];
+                await writeExcelSheet(appState.excelFileId, '勤怠記録', eventValues);
+
+                const empValues = [
+                    ['ID', '氏名', '部署', 'アバタースタイル', 'アバターシード', 'LINE_ID', 'アバターURL'],
+                    ...mergedEmps.map(e => [
+                        e.id, e.name, e.dept,
+                        e.avatarStyle || 'adventurer',
+                        e.avatarSeed || e.name,
+                        e.lineUserId || '',
+                        e.customAvatarUrl || ''
+                    ])
+                ];
+                await writeExcelSheet(appState.excelFileId, '従業員', empValues);
+
+                const locValues = [
+                    ['ID', '拠点名'],
+                    ...mergedLocs.map(l => [l.id, l.name])
+                ];
+                await writeExcelSheet(appState.excelFileId, '拠点', locValues);
+
+                // Write shared LINE settings
+                if (appState.lineGasUrl || appState.lineManagerUserId) {
+                    const settingsValues = [
+                        ['キー', '値'],
+                        ['lineGasUrl', appState.lineGasUrl || ''],
+                        ['lineManagerUserId', appState.lineManagerUserId || ''],
+                        ['lineNotifyTime', appState.lineNotifyTime || '08:00'],
+                        ['lineNotifyEnabled', appState.lineNotifyEnabled ? 'true' : 'false']
+                    ];
+                    await writeExcelSheet(appState.excelFileId, '設定', settingsValues);
+                }
+
+                // ===== STEP 5: Save & render =====
+                appState.lastSyncTime = new Date().toISOString();
+                saveAppState();
+                loadAndRender();
+                updateLocationBadge();
+
+                updateSyncIndicator('done');
+                isSyncing = false;
+            } catch (err) {
+                updateSyncIndicator('error');
+                isSyncing = false;
+                console.error('Sync error:', err);
+
+                let msg = '同期エラー: ';
+                if (err.message === 'Not authenticated') {
+                    msg += '認証切れ。設定から再ログインしてください。';
+                } else if (err.message.includes('403')) {
+                    msg += 'アクセス権限がありません。Azure で Files.ReadWrite 権限を確認してください。';
+                } else if (err.message.includes('400') || err.message.includes('invalidRequest') || err.message.includes('item ID')) {
+                    msg += 'ファイルIDが無効です。設定でファイルを再選択してください。';
+                    appState.excelFileId = null;
+                    appState.excelFileName = null;
+                    localStorage.removeItem('kumon_excelFileId');
+                    localStorage.removeItem('kumon_excelFileName');
+                } else if (err.message.includes('404')) {
+                    msg += 'Excel ファイルが見つかりません。設定でファイルを再選択してください。';
+                    appState.excelFileId = null;
+                    appState.excelFileName = null;
+                    localStorage.removeItem('kumon_excelFileId');
+                    localStorage.removeItem('kumon_excelFileName');
+                } else if (err.message.includes('423')) {
+                    msg += 'ファイルがロックされています。Excel が開いている場合は閉じてください。';
+                } else {
+                    msg += err.message.substring(0, 120);
+                }
+                showToast(msg, 'error', 8000);
+            }
+        }
+
+        // syncFromExcel is alias — syncToExcel does read+merge+write
+        async function syncFromExcel() {
+            return syncToExcel();
+        }
+
+        
+        // ========== DEVICE MANAGEMENT ==========
+        function getDeviceInfo() {
+            const ua = navigator.userAgent;
+            let device = 'Unknown';
+
+            if (/iPad/.test(ua)) device = 'iPad';
+            else if (/iPhone/.test(ua)) device = 'iPhone';
+            else if (/Android/.test(ua)) device = 'Android';
+            else if (/Windows/.test(ua)) device = 'Windows PC';
+            else if (/Mac/.test(ua)) device = 'Mac';
+            else if (/Linux/.test(ua)) device = 'Linux';
+
+            return device;
+        }
+
+        function setDeviceName(name) {
+            appState.deviceName = name;
+            localStorage.setItem('kumon_deviceName', name);
+        }
+
+        function getDeviceName() {
+            return appState.deviceName || 'Unknown Device';
+        }
+
+        // Initialize device modal listeners
+        function initializeDeviceListeners() {
+            const btnChangeDevice = document.getElementById('btnChangeDevice');
+            if (btnChangeDevice) {
+                btnChangeDevice.onclick = () => {
+                    const autoDetect = getDeviceInfo();
+                    const currentName = getDeviceName();
+
+                    const message = `デバイス名を入力してください\n\n自動検出: ${autoDetect}\n現在の設定: ${currentName}`;
+                    const newName = prompt(message, currentName);
+
+                    if (newName !== null && newName.trim() !== '') {
+                        setDeviceName(newName.trim());
+                        showToast('デバイス名を保存しました', 'success');
+                        renderSettings();
+                    }
+                };
+            }
+        }
+
+        // Get events from the last 2 weeks (for Excel optimization)
+        function getLastTwoWeeksEvents(events) {
+            const twoWeeksAgo = new Date();
+            twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+            return events.filter(e => new Date(e.ts) >= twoWeeksAgo);
+        }
+
+// ========== STORAGE ==========
+        function saveAppState() {
+            localStorage.setItem('kumon_locations', JSON.stringify(appState.locations));
+            localStorage.setItem('kumon_employees', JSON.stringify(appState.employees));
+            localStorage.setItem('kumon_records', JSON.stringify(appState.records));
+            localStorage.setItem('kumon_currentLocationId', appState.currentLocationId || '');
+            localStorage.setItem('kumon_lastSyncTime', appState.lastSyncTime || '');
+            localStorage.setItem('kumon_deviceName', appState.deviceName || '');
+            localStorage.setItem('kumon_lineNotifyEnabled', appState.lineNotifyEnabled ? 'true' : 'false');
+            localStorage.setItem('kumon_lineGasUrl', appState.lineGasUrl || '');
+            localStorage.setItem('kumon_lineManagerUserId', appState.lineManagerUserId || '');
+            localStorage.setItem('kumon_lastLineCheckDate', appState.lastLineCheckDate || '');
+            localStorage.setItem('kumon_lineNotifyTime', appState.lineNotifyTime || '23:30');
+        }
+
+        // Auto-sync every 30 seconds: read → merge → write (all in one)
+        setInterval(() => {
+            if (navigator.onLine && appState.excelFileId) {
+                syncToExcel().catch(err => console.error('Auto-sync failed', err));
+            }
+        }, 30000);
+
+        // ========== LINE NOTIFICATION ==========
+        const GAS_TEMPLATE_CODE = `// LINE 勤怠通知 中継スクリプト (Google Apps Script)
+// デプロイ: ウェブアプリ → アクセス:全員
+
+// ★ ここにLINE公式アカウントのチャネルアクセストークンを設定
+const LINE_CHANNEL_ACCESS_TOKEN = 'ここにトークンを貼り付け';
+
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const results = [];
+
+    // 各通知先にメッセージを送信
+    if (data.notifications && Array.isArray(data.notifications)) {
+      data.notifications.forEach(n => {
+        if (n.userId && n.message) {
+          const res = sendLineMessage(n.userId, n.message);
+          results.push({ userId: n.userId, status: res });
+        }
+      });
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: true, results: results }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: false, error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function sendLineMessage(userId, message) {
+  const url = 'https://api.line.me/v2/bot/message/push';
+  const payload = {
+    to: userId,
+    messages: [{ type: 'text', text: message }]
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'Authorization': 'Bearer ' + LINE_CHANNEL_ACCESS_TOKEN
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const res = UrlFetchApp.fetch(url, options);
+  return res.getResponseCode();
+}
+
+// テスト用関数（スクリプトエディタから実行可能）
+function testSend() {
+  const testUserId = 'Uxxxxxxxxxxxxx'; // テスト用ユーザーID
+  const result = sendLineMessage(testUserId, '勤怠通知テスト: 接続成功です！');
+  Logger.log('Result: ' + result);
+}`;
+
+        // Initialize LINE notification settings UI
+        function initLineNotifySettings() {
+            const toggle = document.getElementById('lineNotifyToggle');
+            const detail = document.getElementById('lineSettingsDetail');
+            const track = document.getElementById('lineToggleTrack');
+            const thumb = document.getElementById('lineToggleThumb');
+
+            if (!toggle) return;
+
+            // Set initial state
+            toggle.checked = appState.lineNotifyEnabled;
+            updateToggleUI(toggle.checked);
+            detail.style.display = toggle.checked ? 'block' : 'none';
+            document.getElementById('lineGasUrl').value = appState.lineGasUrl || '';
+            document.getElementById('lineManagerUserId').value = appState.lineManagerUserId || '';
+            document.getElementById('lineNotifyTime').value = appState.lineNotifyTime || '23:30';
+            document.getElementById('lineNotifyStatus').textContent = toggle.checked ? '有効' : '無効';
+
+            // Toggle handler
+            toggle.addEventListener('change', () => {
+                updateToggleUI(toggle.checked);
+                detail.style.display = toggle.checked ? 'block' : 'none';
+                document.getElementById('lineNotifyStatus').textContent = toggle.checked ? '有効' : '無効';
+                appState.lineNotifyEnabled = toggle.checked;
+                saveAppState();
+                if (toggle.checked) {
+                    startLineCheckTimer();
+                }
+            });
+
+            function updateToggleUI(checked) {
+                if (checked) {
+                    track.style.background = 'var(--green)';
+                    thumb.style.transform = 'translateX(22px)';
+                } else {
+                    track.style.background = 'var(--border2)';
+                    thumb.style.transform = 'translateX(0)';
+                }
+            }
+
+            // Save button
+            document.getElementById('btnSaveLineSettings').addEventListener('click', () => {
+                appState.lineGasUrl = document.getElementById('lineGasUrl').value.trim();
+                appState.lineManagerUserId = document.getElementById('lineManagerUserId').value.trim();
+                appState.lineNotifyTime = document.getElementById('lineNotifyTime').value;
+                saveAppState();
+                showToast('LINE 通知設定を保存しました', 'success');
+            });
+
+            // Test button
+            document.getElementById('btnTestLineNotify').addEventListener('click', async () => {
+                const gasUrl = document.getElementById('lineGasUrl').value.trim();
+                const managerId = document.getElementById('lineManagerUserId').value.trim();
+
+                if (!gasUrl) {
+                    showToast('GAS Webhook URL を入力してください', 'warning');
+                    return;
+                }
+                if (!managerId) {
+                    showToast('責任者 LINE ユーザーID を入力してください', 'warning');
+                    return;
+                }
+
+                showToast('テスト送信中...', 'info');
+                try {
+                    const res = await sendLineNotification(gasUrl, [{
+                        userId: managerId,
+                        message: '【勤怠管理】テスト通知\nLINE 通知設定が正しく動作しています。'
+                    }]);
+                    if (res.success) {
+                        showToast('テスト送信成功！LINEを確認してください', 'success');
+                    } else {
+                        showToast('送信失敗: ' + (res.error || '不明なエラー'), 'error');
+                    }
+                } catch (err) {
+                    showToast('送信エラー: ' + err.message, 'error');
+                }
+            });
+
+            // GAS template button
+            document.getElementById('btnShowGasTemplate').addEventListener('click', () => {
+                document.getElementById('gasTemplateCode').textContent = GAS_TEMPLATE_CODE;
+                document.getElementById('gasTemplateModal').classList.add('active');
+            });
+
+            document.getElementById('gasTemplateClose').addEventListener('click', () => {
+                document.getElementById('gasTemplateModal').classList.remove('active');
+            });
+
+            document.getElementById('gasTemplateCopy').addEventListener('click', () => {
+                navigator.clipboard.writeText(GAS_TEMPLATE_CODE).then(() => {
+                    showToast('コードをコピーしました', 'success');
+                }).catch(() => {
+                    // Fallback
+                    const textarea = document.createElement('textarea');
+                    textarea.value = GAS_TEMPLATE_CODE;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    showToast('コードをコピーしました', 'success');
+                });
+            });
+
+            // Start timer if enabled
+            if (appState.lineNotifyEnabled) {
+                startLineCheckTimer();
+            }
+        }
+
+        // Send notification via GAS webhook
+        async function sendLineNotification(gasUrl, notifications) {
+            const response = await fetch(gasUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ notifications })
+            });
+            return await response.json();
+        }
+
+        // Check for incomplete attendance and send LINE notifications
+        async function checkAndNotifyIncompleteAttendance(isTest = false) {
+            if (!appState.lineNotifyEnabled && !isTest) return;
+            if (!appState.lineGasUrl) {
+                console.log('LINE notification skipped: no GAS URL configured');
+                return;
+            }
+
+            const today = getLocalDateStr();
+
+            // Check yesterday's records (morning notification for previous day)
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const checkDate = getLocalDateStr(yesterday);
+
+            // Prevent duplicate checks on the same day
+            if (!isTest && appState.lastLineCheckDate === today) {
+                console.log('LINE check already done today');
+                return;
+            }
+
+            console.log('Running attendance check for', checkDate, '(yesterday)...');
+
+            const notifications = [];
+            const incompleteList = [];
+
+            appState.employees.forEach(emp => {
+                const dayEvents = appState.records
+                    .filter(r => r.empId === emp.id && r.date === checkDate)
+                    .sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+                const hasIn = dayEvents.some(e => e.type === 'in');
+                const hasOut = dayEvents.some(e => e.type === 'out');
+
+                if (hasIn && !hasOut) {
+                    // Has check-in but no check-out
+                    const inTime = new Date(dayEvents.find(e => e.type === 'in').ts);
+                    const inTimeStr = `${String(inTime.getHours()).padStart(2, '0')}:${String(inTime.getMinutes()).padStart(2, '0')}`;
+                    incompleteList.push({
+                        emp,
+                        issue: '退勤未打刻',
+                        detail: `出勤 ${inTimeStr} → 退勤なし`
+                    });
+
+                    // Notify the employee if they have a LINE user ID
+                    if (emp.lineUserId) {
+                        notifications.push({
+                            userId: emp.lineUserId,
+                            message: `【勤怠管理】${emp.name}さん\n昨日（${checkDate}）の退勤が未打刻です。\n出勤時刻: ${inTimeStr}\n確認をお願いします。`
+                        });
+                    }
+                } else if (!hasIn && hasOut) {
+                    // Has check-out but no check-in
+                    const outTime = new Date(dayEvents.find(e => e.type === 'out').ts);
+                    const outTimeStr = `${String(outTime.getHours()).padStart(2, '0')}:${String(outTime.getMinutes()).padStart(2, '0')}`;
+                    incompleteList.push({
+                        emp,
+                        issue: '出勤未打刻',
+                        detail: `出勤なし → 退勤 ${outTimeStr}`
+                    });
+
+                    if (emp.lineUserId) {
+                        notifications.push({
+                            userId: emp.lineUserId,
+                            message: `【勤怠管理】${emp.name}さん\n昨日（${checkDate}）の出勤が未打刻です。\n退勤時刻: ${outTimeStr}\n確認をお願いします。`
+                        });
+                    }
+                }
+                // hasIn && hasOut → OK, skip
+                // !hasIn && !hasOut → Not working that day, skip
+            });
+
+            if (incompleteList.length === 0) {
+                console.log('All attendance complete — no notification needed');
+                if (!isTest) {
+                    appState.lastLineCheckDate = today;
+                    saveAppState();
+                }
+                return;
+            }
+
+            // Build manager notification
+            if (appState.lineManagerUserId) {
+                let managerMsg = `【勤怠管理】昨日の未完了打刻\n${checkDate}\n\n`;
+                incompleteList.forEach(item => {
+                    managerMsg += `■ ${item.emp.name}（${item.emp.dept}）\n  ${item.issue}: ${item.detail}\n\n`;
+                });
+                managerMsg += '確認をお願いします。';
+
+                notifications.push({
+                    userId: appState.lineManagerUserId,
+                    message: managerMsg
+                });
+            }
+
+            if (notifications.length === 0) {
+                console.log('No LINE user IDs configured — skipping notification');
+                if (!isTest) {
+                    appState.lastLineCheckDate = today;
+                    saveAppState();
+                }
+                return;
+            }
+
+            // Send notifications
+            try {
+                const result = await sendLineNotification(appState.lineGasUrl, notifications);
+                console.log('LINE notification result:', result);
+                if (result.success) {
+                    showToast(`LINE通知を送信しました（${incompleteList.length}名の未完了）`, 'success');
+                } else {
+                    showToast('LINE通知の送信に失敗しました: ' + (result.error || ''), 'error');
+                }
+            } catch (err) {
+                console.error('LINE notification error:', err);
+                showToast('LINE通知エラー: ' + err.message, 'error');
+            }
+
+            if (!isTest) {
+                appState.lastLineCheckDate = today;
+                saveAppState();
+            }
+        }
+
+        // Timer: check every minute, fire at 23:30
+        let lineCheckTimerInterval = null;
+        function startLineCheckTimer() {
+            if (lineCheckTimerInterval) return; // Already running
+
+            console.log('LINE check timer started');
+            lineCheckTimerInterval = setInterval(() => {
+                if (!appState.lineNotifyEnabled) return;
+
+                const now = new Date();
+                const hh = now.getHours();
+                const mm = now.getMinutes();
+
+                const [targetHH, targetMM] = (appState.lineNotifyTime || '23:30').split(':').map(Number);
+                if (hh === targetHH && mm === targetMM) {
+                    checkAndNotifyIncompleteAttendance();
+                }
+            }, 60000); // Check every 60 seconds
+        }
+
+    </script>
+</body>
+</html>
