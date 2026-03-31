@@ -15,6 +15,11 @@
             user-select: none;
         }
 
+        input, textarea, select, [contenteditable="true"] {
+            -webkit-user-select: text;
+            user-select: text;
+        }
+
         :root {
             --bg: #FFFFFF;
             --surface: #FFFFFF;
@@ -1163,10 +1168,12 @@
             border: 1px solid var(--border);
             border-radius: 8px;
             font-family: var(--font);
-            font-size: 13px;
+            font-size: 16px;
             color: var(--ink);
             background: var(--surface);
             margin-bottom: 12px;
+            -webkit-user-select: text;
+            user-select: text;
         }
 
         .wizard-code {
@@ -1341,10 +1348,7 @@
                     <div id="currentlyWorking"></div>
                 </div>
                 <div class="dash-section">
-                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-                        <div class="section-title" style="margin-bottom:0;">月次勤怠一覧</div>
-                        <button class="btn btn-secondary btn-small" id="btnExportMonthly">↓ CSV出力</button>
-                    </div>
+                    <div class="section-title">月次勤怠一覧</div>
                     <div id="monthlyGrid" class="monthly-grid-wrapper"></div>
                 </div>
             </div>
@@ -1353,12 +1357,8 @@
             <div class="tab-content" id="tab-emp">
                 <div class="emp-header">
                     <div style="font-size: 16px; font-weight: 700;">従業員管理</div>
-                    <div style="display:flex; gap:8px;">
-                        <button class="btn btn-secondary btn-small" id="btnImportEmp">↑ CSVインポート</button>
-                        <button class="btn btn-primary btn-small" id="btnAddEmp">＋ 追加</button>
-                    </div>
+                    <button class="btn btn-primary btn-small" id="btnAddEmp">＋ 追加</button>
                 </div>
-                <input type="file" id="importEmpCsvInput" accept=".csv" style="display:none">
                 <div class="emp-grid" id="empGrid"></div>
                 <div class="no-sel-msg" id="noEmpMsg" style="display: none;">
                     <div class="no-sel-msg-icon">👥</div>
@@ -2162,14 +2162,6 @@
             document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
 
             // Employee Management
-            document.getElementById('btnImportEmp').addEventListener('click', () => {
-                document.getElementById('importEmpCsvInput').click();
-            });
-            document.getElementById('importEmpCsvInput').addEventListener('change', (e) => {
-                importEmployeesFromCSV(e.target.files[0]);
-                e.target.value = '';
-            });
-            document.getElementById('btnExportMonthly').addEventListener('click', exportMonthlySummaryCSV);
             document.getElementById('btnAddEmp').addEventListener('click', () => openEmpModal());
             document.getElementById('empModalCancel').addEventListener('click', () => closeEmpModal());
             document.getElementById('empForm').addEventListener('submit', (e) => {
@@ -3616,112 +3608,6 @@
             link.click();
 
             showToast('CSV をエクスポートしました', 'success');
-        }
-
-        // ========== CSV IMPORT: EMPLOYEES ==========
-        function importEmployeesFromCSV(file) {
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const text = e.target.result;
-                const lines = text.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l);
-
-
-
-                // ヘッダー行をスキップ（「氏名」で始まる行）
-                const dataLines = lines[0] === '氏名' ? lines.slice(1) : lines;
-
-                let added = 0;
-                let skipped = 0;
-                dataLines.forEach(line => {
-                    const name = line.replace(/^"|"$/g, '').trim();
-                    if (!name) return;
-
-                    // 重複チェック（同名はスキップ）
-                    const exists = appState.employees.some(e => e.name === name);
-                    if (exists) { skipped++; return; }
-
-                    appState.employees.push({
-                        id: 'emp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-                        name,
-                        dept: '',
-                        avatarSeed: name,
-                        avatarStyle: 'adventurer',
-                        lineUserId: '',
-                        isIn: false,
-                        checkinTime: null
-                    });
-                    added++;
-                });
-
-                saveAppState();
-                loadAndRender();
-                if (appState.excelFileId && navigator.onLine) {
-                    syncToExcel().catch(err => console.error('Sync failed', err));
-                }
-
-                let msg = `${added}名を追加しました`;
-                if (skipped > 0) msg += `（${skipped}名は重複のためスキップ）`;
-                showToast(msg, added > 0 ? 'success' : 'warning');
-            };
-            reader.readAsText(file, 'UTF-8');
-        }
-
-        // ========== CSV EXPORT: MONTHLY SUMMARY ==========
-        function exportMonthlySummaryCSV() {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = now.getMonth();
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const employees = appState.employees;
-
-            if (employees.length === 0) {
-                showToast('従業員がいません', 'warning');
-                return;
-            }
-
-            const pairs = buildPairedRecords(appState.records);
-            const monthData = {};
-            employees.forEach(emp => { monthData[emp.id] = {}; });
-
-            pairs.forEach(r => {
-                const rDate = new Date(r.date);
-                if (rDate.getMonth() === month && rDate.getFullYear() === year) {
-                    if (!monthData[r.empId]) monthData[r.empId] = {};
-                    let hours = 0;
-                    if (r.inTs && r.outTs) {
-                        hours = (new Date(r.outTs) - new Date(r.inTs)) / (1000 * 3600);
-                    }
-                    const day = rDate.getDate();
-                    monthData[r.empId][day] = (monthData[r.empId][day] || 0) + hours;
-                }
-            });
-
-            const header = ['氏名'];
-            for (let d = 1; d <= daysInMonth; d++) header.push(`${month + 1}/${d}`);
-            header.push('累計(h)');
-
-            const rows = [header];
-            employees.forEach(emp => {
-                const row = [emp.name];
-                let total = 0;
-                for (let d = 1; d <= daysInMonth; d++) {
-                    const h = monthData[emp.id][d] || 0;
-                    total += h;
-                    row.push(h > 0 ? h.toFixed(2) : '');
-                }
-                row.push(total.toFixed(2));
-                rows.push(row);
-            });
-
-            const csv = '﻿' + rows.map(r => r.map(cell => `"${cell}"`).join(',')).join('
-');
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `月次勤怠_${year}${String(month + 1).padStart(2, '0')}.csv`;
-            link.click();
-            showToast('月次サマリをCSV出力しました', 'success');
         }
 
         // ========== EVENT-BASED SYNC ==========
